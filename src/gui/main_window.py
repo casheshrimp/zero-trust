@@ -1,23 +1,28 @@
 """
-Главное окно приложения - исправленная версия
+Главное окно приложения с новым дизайном
 """
 
 import sys
 from pathlib import Path
-
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSplitter, QTabWidget, QStatusBar, QToolBar,
-    QMenuBar, QMessageBox, QFileDialog, QProgressBar,
-    QLabel, QPushButton, QTextEdit, QListWidget, QListWidgetItem,
-    QTreeWidget, QTreeWidgetItem, QGroupBox, QFormLayout,
-    QLineEdit, QComboBox, QSpinBox, QCheckBox
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
+    QSplitter, QStatusBar, QToolBar, QMenuBar, QMessageBox,
+    QLabel, QPushButton, QFrame, QSizePolicy, QSpacerItem
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QIcon, QKeySequence
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QAction, QIcon, QKeySequence, QPixmap
+
+from .styles import AppStyles
+from .pages.dashboard import DashboardPage
+from .pages.scanner import ScannerPage
+from .pages.constructor import ConstructorPage
+from .pages.generator import GeneratorPage
+from .pages.validator import ValidatorPage
+from .pages.reports import ReportsPage
+from .pages.settings import SettingsPage
 
 class MainWindow(QMainWindow):
-    """Главное окно приложения"""
+    """Главное окно с новым дизайном"""
     
     def __init__(self):
         super().__init__()
@@ -25,210 +30,262 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ZeroTrust Inspector v1.0.0")
         self.setGeometry(100, 100, 1400, 800)
         
+        # Применяем стили
+        self.setPalette(AppStyles.create_dark_palette())
+        self.setStyleSheet(AppStyles.get_stylesheet())
+        
         self.init_ui()
         self.create_menu()
         self.create_toolbar()
         self.create_statusbar()
         
         self.statusBar().showMessage("Готов к работе")
-    
+        
     def init_ui(self):
         """Инициализация интерфейса"""
         # Центральный виджет
         central_widget = QWidget()
+        central_widget.setObjectName("centralWidget")
         self.setCentralWidget(central_widget)
         
         # Основной макет
-        main_layout = QVBoxLayout(central_widget)
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # Верхняя панель с информацией
-        info_label = QLabel("🎉 ZeroTrust Inspector успешно запущен!")
-        info_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
-        info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(info_label)
+        # Боковое меню (Navigation Rail)
+        self.sidebar = self.create_sidebar()
+        main_layout.addWidget(self.sidebar)
         
-        # Создаем сплиттер для разделения на три части
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        # Основная область
+        main_area = QWidget()
+        main_area.setObjectName("mainArea")
+        main_area_layout = QVBoxLayout(main_area)
+        main_area_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Левая панель: устройства и зоны
-        left_panel = self.create_left_panel()
+        # Верхняя панель с заголовком
+        self.top_bar = self.create_top_bar()
+        main_area_layout.addWidget(self.top_bar)
         
-        # Центральная панель: визуализация сети
-        center_panel = self.create_center_panel()
+        # Область содержимого (стек виджетов)
+        self.content_stack = QStackedWidget()
+        self.content_stack.setObjectName("contentStack")
         
-        # Правая панель: свойства и правила
-        right_panel = self.create_right_panel()
+        # Создаем страницы
+        self.pages = {
+            'dashboard': DashboardPage(),
+            'scanner': ScannerPage(),
+            'constructor': ConstructorPage(),
+            'generator': GeneratorPage(),
+            'validator': ValidatorPage(),
+            'reports': ReportsPage(),
+            'settings': SettingsPage(),
+        }
         
-        splitter.addWidget(left_panel)
-        splitter.addWidget(center_panel)
-        splitter.addWidget(right_panel)
-        splitter.setSizes([300, 700, 400])
+        for page_name, page in self.pages.items():
+            self.content_stack.addWidget(page)
         
-        main_layout.addWidget(splitter)
-    
-    def create_left_panel(self):
-        """Создать левую панель"""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
+        main_area_layout.addWidget(self.content_stack)
         
-        # Заголовок
-        title = QLabel("📋 Устройства и зоны")
-        title.setStyleSheet("font-weight: bold; margin: 5px;")
-        layout.addWidget(title)
+        main_layout.addWidget(main_area, 1)
         
-        # Список устройств
-        devices_group = QGroupBox("Обнаруженные устройства")
-        devices_layout = QVBoxLayout()
+        # Показываем начальную страницу
+        self.show_page('dashboard')
         
-        self.device_list = QListWidget()
-        self.device_list.addItem("🖥️ Компьютер (192.168.1.100)")
-        self.device_list.addItem("📱 Смартфон (192.168.1.101)")
-        self.device_list.addItem("💡 Умная лампа (192.168.1.102)")
-        self.device_list.addItem("📷 Камера (192.168.1.103)")
-        
-        devices_layout.addWidget(self.device_list)
-        devices_group.setLayout(devices_layout)
-        layout.addWidget(devices_group)
-        
-        # Кнопки управления
-        buttons_layout = QHBoxLayout()
-        scan_btn = QPushButton("🔍 Сканировать")
-        classify_btn = QPushButton("🏷️ Классифицировать")
-        
-        scan_btn.clicked.connect(self.scan_network)
-        classify_btn.clicked.connect(self.classify_devices)
-        
-        buttons_layout.addWidget(scan_btn)
-        buttons_layout.addWidget(classify_btn)
-        layout.addLayout(buttons_layout)
-        
-        # Список зон
-        zones_group = QGroupBox("Зоны безопасности")
-        zones_layout = QVBoxLayout()
-        
-        self.zones_tree = QTreeWidget()
-        self.zones_tree.setHeaderLabel("Зоны")
-        
-        trusted_zone = QTreeWidgetItem(["✅ Trusted (Доверенная)"])
-        iot_zone = QTreeWidgetItem(["⚠️ IoT (Умные устройства)"])
-        guest_zone = QTreeWidgetItem(["👥 Guests (Гости)"])
-        
-        trusted_zone.addChild(QTreeWidgetItem(["Компьютер"]))
-        iot_zone.addChild(QTreeWidgetItem(["Умная лампа"]))
-        iot_zone.addChild(QTreeWidgetItem(["Камера"]))
-        
-        self.zones_tree.addTopLevelItem(trusted_zone)
-        self.zones_tree.addTopLevelItem(iot_zone)
-        self.zones_tree.addTopLevelItem(guest_zone)
-        
-        zones_layout.addWidget(self.zones_tree)
-        zones_group.setLayout(zones_layout)
-        layout.addWidget(zones_group)
-        
-        return panel
-    
-    def create_center_panel(self):
-        """Создать центральную панель"""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        
-        # Заголовок
-        title = QLabel("🌐 Визуализация сети")
-        title.setStyleSheet("font-weight: bold; margin: 5px;")
-        layout.addWidget(title)
-        
-        # Область визуализации
-        visualization = QTextEdit()
-        visualization.setHtml("""
-        <div style="text-align: center; padding: 20px;">
-            <h2>Визуализатор сети</h2>
-            <p>Здесь будет отображаться графическое представление сети</p>
-            <hr>
-            <div style="display: flex; justify-content: center; gap: 50px; margin: 30px;">
-                <div style="border: 2px solid green; padding: 20px; border-radius: 10px;">
-                    <h3>✅ Trusted Zone</h3>
-                    <p>🖥️ Компьютер</p>
-                </div>
-                <div style="border: 2px solid orange; padding: 20px; border-radius: 10px;">
-                    <h3>⚠️ IoT Zone</h3>
-                    <p>💡 Умная лампа</p>
-                    <p>📷 Камера</p>
-                </div>
-                <div style="border: 2px solid gray; padding: 20px; border-radius: 10px;">
-                    <h3>👥 Guest Zone</h3>
-                    <p>📱 Смартфон</p>
-                </div>
-            </div>
-            <hr>
-            <p>🔄 Перетаскивайте устройства между зонами</p>
-            <p>🔗 Правила отображаются в виде стрелок</p>
-        </div>
+    def create_sidebar(self):
+        """Создать боковое меню"""
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(80)
+        sidebar.setStyleSheet("""
+            QFrame#sidebar {
+                background-color: #252525;
+                border-right: 1px solid #404040;
+            }
         """)
-        visualization.setReadOnly(True)
-        layout.addWidget(visualization)
         
-        return panel
-    
-    def create_right_panel(self):
-        """Создать правую панель"""
-        panel = QTabWidget()
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(0, 20, 0, 20)
+        layout.setSpacing(10)
         
-        # Вкладка 1: Свойства
-        properties_tab = QWidget()
-        properties_layout = QVBoxLayout(properties_tab)
+        # Логотип
+        logo_label = QLabel("🛡️")
+        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo_label.setStyleSheet("font-size: 28px; margin-bottom: 30px;")
+        layout.addWidget(logo_label)
         
-        # Форма свойств устройства
-        form_group = QGroupBox("Свойства устройства")
-        form_layout = QFormLayout()
+        # Кнопки навигации
+        nav_buttons = [
+            ("👁️", "Обзор", "dashboard", "Обзор сети"),
+            ("🔍", "Сканер", "scanner", "Сканирование сети"),
+            ("🎨", "Конструктор", "constructor", "Конструктор политик"),
+            ("⚙️", "Генератор", "generator", "Генератор конфигураций"),
+            ("✅", "Валидатор", "validator", "Валидация политик"),
+            ("📊", "Отчеты", "reports", "Отчеты и аналитика"),
+        ]
         
-        form_layout.addRow("IP адрес:", QLineEdit("192.168.1.100"))
-        form_layout.addRow("MAC адрес:", QLineEdit("00:11:22:33:44:55"))
-        form_layout.addRow("Тип:", QComboBox())
-        form_layout.addRow("Зона:", QComboBox())
+        self.nav_buttons = {}
+        for icon, text, page_id, tooltip in nav_buttons:
+            btn = QPushButton(icon)
+            btn.setToolTip(tooltip)
+            btn.setFixedSize(60, 60)
+            btn.setCheckable(True)
+            btn.setStyleSheet("""
+                QPushButton {
+                    font-size: 24px;
+                    border: none;
+                    border-radius: 8px;
+                    background-color: transparent;
+                }
+                QPushButton:hover {
+                    background-color: #404040;
+                }
+                QPushButton:checked {
+                    background-color: #0B5394;
+                }
+            """)
+            
+            btn.clicked.connect(lambda checked, pid=page_id: self.show_page(pid))
+            layout.addWidget(btn)
+            self.nav_buttons[page_id] = btn
         
-        form_group.setLayout(form_layout)
-        properties_layout.addWidget(form_group)
+        # Разделитель
+        layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
         
-        # Вкладка 2: Правила
-        rules_tab = QWidget()
-        rules_layout = QVBoxLayout(rules_tab)
-        
-        rules_list = QListWidget()
-        rules_list.addItem("✅ Trusted → IoT: DENY")
-        rules_list.addItem("✅ Trusted → Guest: DENY")
-        rules_list.addItem("⚠️ IoT → Internet: ALLOW (порт 443)")
-        rules_list.addItem("⚠️ Guest → IoT: DENY")
-        
-        rules_layout.addWidget(rules_list)
-        
-        # Вкладка 3: Статистика
-        stats_tab = QWidget()
-        stats_layout = QVBoxLayout(stats_tab)
-        
-        stats_text = QTextEdit()
-        stats_text.setHtml("""
-        <h3>📊 Статистика сети</h3>
-        <ul>
-            <li>Всего устройств: <b>4</b></li>
-            <li>Зон безопасности: <b>3</b></li>
-            <li>Правил настроено: <b>4</b></li>
-            <li>Оценка безопасности: <b>85%</b></li>
-        </ul>
-        <h3>🔍 Последнее сканирование:</h3>
-        <ul>
-            <li>Время: 5 минут назад</li>
-            <li>Обнаружено: 4 устройства</li>
-            <li>Открытых портов: 12</li>
-        </ul>
+        # Кнопки внизу
+        settings_btn = QPushButton("⚙️")
+        settings_btn.setToolTip("Настройки")
+        settings_btn.setFixedSize(60, 60)
+        settings_btn.setCheckable(True)
+        settings_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 24px;
+                border: none;
+                border-radius: 8px;
+                background-color: transparent;
+            }
+            QPushButton:hover {
+                background-color: #404040;
+            }
+            QPushButton:checked {
+                background-color: #0B5394;
+            }
         """)
-        stats_text.setReadOnly(True)
-        stats_layout.addWidget(stats_text)
+        settings_btn.clicked.connect(lambda: self.show_page('settings'))
+        layout.addWidget(settings_btn)
         
-        panel.addTab(properties_tab, "📋 Свойства")
-        panel.addTab(rules_tab, "🔒 Правила")
-        panel.addTab(stats_tab, "📊 Статистика")
+        help_btn = QPushButton("❓")
+        help_btn.setToolTip("Помощь")
+        help_btn.setFixedSize(60, 60)
+        help_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 24px;
+                border: none;
+                border-radius: 8px;
+                background-color: transparent;
+            }
+            QPushButton:hover {
+                background-color: #404040;
+            }
+        """)
+        help_btn.clicked.connect(self.show_help)
+        layout.addWidget(help_btn)
         
-        return panel
+        return sidebar
+    
+    def create_top_bar(self):
+        """Создать верхнюю панель"""
+        top_bar = QFrame()
+        top_bar.setObjectName("topBar")
+        top_bar.setFixedHeight(60)
+        top_bar.setStyleSheet("""
+            QFrame#topBar {
+                background-color: #252525;
+                border-bottom: 1px solid #404040;
+            }
+        """)
+        
+        layout = QHBoxLayout(top_bar)
+        layout.setContentsMargins(20, 0, 20, 0)
+        
+        # Заголовок страницы
+        self.page_title = QLabel("Обзор сети")
+        self.page_title.setObjectName("pageTitle")
+        self.page_title.setStyleSheet("""
+            QLabel#pageTitle {
+                font-size: 18px;
+                font-weight: bold;
+                color: #FFFFFF;
+            }
+        """)
+        layout.addWidget(self.page_title)
+        
+        # Пространство
+        layout.addSpacerItem(QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        
+        # Кнопки быстрых действий
+        refresh_btn = QPushButton("🔄")
+        refresh_btn.setToolTip("Обновить")
+        refresh_btn.setFixedSize(40, 40)
+        refresh_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 18px;
+                border: none;
+                border-radius: 6px;
+                background-color: #404040;
+            }
+            QPushButton:hover {
+                background-color: #505050;
+            }
+        """)
+        
+        quick_action_btn = QPushButton("⚡")
+        quick_action_btn.setToolTip("Быстрые действия")
+        quick_action_btn.setFixedSize(40, 40)
+        quick_action_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 18px;
+                border: none;
+                border-radius: 6px;
+                background-color: #0B5394;
+            }
+            QPushButton:hover {
+                background-color: #3D85C6;
+            }
+        """)
+        
+        layout.addWidget(refresh_btn)
+        layout.addWidget(quick_action_btn)
+        
+        return top_bar
+    
+    def show_page(self, page_id):
+        """Показать страницу по ID"""
+        # Сбрасываем все кнопки
+        for btn in self.nav_buttons.values():
+            btn.setChecked(False)
+        
+        # Активируем текущую кнопку
+        if page_id in self.nav_buttons:
+            self.nav_buttons[page_id].setChecked(True)
+        
+        # Меняем заголовок
+        page_titles = {
+            'dashboard': 'Обзор сети',
+            'scanner': 'Сканер сети',
+            'constructor': 'Конструктор политик',
+            'generator': 'Генератор конфигураций',
+            'validator': 'Валидация политик',
+            'reports': 'Отчеты',
+            'settings': 'Настройки',
+        }
+        
+        if page_id in page_titles:
+            self.page_title.setText(page_titles[page_id])
+        
+        # Показываем страницу
+        if page_id in self.pages:
+            self.content_stack.setCurrentWidget(self.pages[page_id])
     
     def create_menu(self):
         """Создать меню приложения"""
@@ -249,6 +306,12 @@ class MainWindow(QMainWindow):
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self.save_policy)
         
+        import_action = QAction("📥 Импорт...", self)
+        import_action.triggered.connect(self.import_policy)
+        
+        export_action = QAction("📤 Экспорт...", self)
+        export_action.triggered.connect(self.export_policy)
+        
         exit_action = QAction("🚪 Выход", self)
         exit_action.setShortcut("Alt+F4")
         exit_action.triggered.connect(self.close)
@@ -257,181 +320,211 @@ class MainWindow(QMainWindow):
         file_menu.addAction(open_action)
         file_menu.addAction(save_action)
         file_menu.addSeparator()
+        file_menu.addAction(import_action)
+        file_menu.addAction(export_action)
+        file_menu.addSeparator()
         file_menu.addAction(exit_action)
         
-        # Меню "Сеть"
-        network_menu = menubar.addMenu("🌐 Сеть")
+        # Меню "Вид"
+        view_menu = menubar.addMenu("👁️ Вид")
         
-        scan_action = QAction("🔍 Сканировать сеть", self)
-        scan_action.setShortcut("F5")
-        scan_action.triggered.connect(self.scan_network)
+        dashboard_action = QAction("👁️ Обзор сети", self)
+        dashboard_action.setShortcut("Ctrl+1")
+        dashboard_action.triggered.connect(lambda: self.show_page('dashboard'))
         
-        network_menu.addAction(scan_action)
+        scanner_action = QAction("🔍 Сканер", self)
+        scanner_action.setShortcut("Ctrl+2")
+        scanner_action.triggered.connect(lambda: self.show_page('scanner'))
         
-        # Меню "Политика"
-        policy_menu = menubar.addMenu("🛡️ Политика")
+        constructor_action = QAction("🎨 Конструктор", self)
+        constructor_action.setShortcut("Ctrl+3")
+        constructor_action.triggered.connect(lambda: self.show_page('constructor'))
         
-        validate_action = QAction("✅ Валидировать", self)
+        view_menu.addAction(dashboard_action)
+        view_menu.addAction(scanner_action)
+        view_menu.addAction(constructor_action)
+        view_menu.addSeparator()
+        
+        fullscreen_action = QAction("🔲 Полный экран", self)
+        fullscreen_action.setShortcut("F11")
+        fullscreen_action.triggered.connect(self.toggle_fullscreen)
+        
+        view_menu.addAction(fullscreen_action)
+        
+        # Меню "Инструменты"
+        tools_menu = menubar.addMenu("🔧 Инструменты")
+        
+        quick_scan_action = QAction("⚡ Быстрое сканирование", self)
+        quick_scan_action.setShortcut("F5")
+        quick_scan_action.triggered.connect(self.quick_scan)
+        
+        validate_action = QAction("✅ Проверить безопасность", self)
         validate_action.setShortcut("F9")
-        validate_action.triggered.connect(self.validate_policy)
+        validate_action.triggered.connect(self.validate_security)
         
-        policy_menu.addAction(validate_action)
+        generate_action = QAction("⚙️ Сгенерировать конфигурацию", self)
+        generate_action.setShortcut("F10")
+        generate_action.triggered.connect(self.generate_config)
+        
+        tools_menu.addAction(quick_scan_action)
+        tools_menu.addAction(validate_action)
+        tools_menu.addAction(generate_action)
         
         # Меню "Справка"
         help_menu = menubar.addMenu("❓ Справка")
         
+        documentation_action = QAction("📚 Документация", self)
+        documentation_action.triggered.connect(self.show_documentation)
+        
         about_action = QAction("ℹ️ О программе", self)
         about_action.triggered.connect(self.show_about)
         
+        help_menu.addAction(documentation_action)
         help_menu.addAction(about_action)
     
     def create_toolbar(self):
         """Создать панель инструментов"""
         toolbar = self.addToolBar("Инструменты")
         toolbar.setMovable(False)
+        toolbar.setIconSize(QSize(24, 24))
         
         # Кнопка сканирования
-        scan_action = QAction("🔍 Сканировать", self)
+        scan_action = QAction("🔍", self)
+        scan_action.setToolTip("Сканировать сеть")
         scan_action.triggered.connect(self.scan_network)
         toolbar.addAction(scan_action)
         
         toolbar.addSeparator()
         
+        # Кнопка конструктора
+        construct_action = QAction("🎨", self)
+        construct_action.setToolTip("Конструктор политик")
+        construct_action.triggered.connect(lambda: self.show_page('constructor'))
+        toolbar.addAction(construct_action)
+        
         # Кнопка валидации
-        validate_action = QAction("✅ Валидировать", self)
-        validate_action.triggered.connect(self.validate_policy)
+        validate_action = QAction("✅", self)
+        validate_action.setToolTip("Валидация")
+        validate_action.triggered.connect(lambda: self.show_page('validator'))
         toolbar.addAction(validate_action)
         
         toolbar.addSeparator()
         
         # Кнопка экспорта
-        export_action = QAction("📤 Экспорт", self)
+        export_action = QAction("📤", self)
+        export_action.setToolTip("Экспорт")
         export_action.triggered.connect(self.export_config)
         toolbar.addAction(export_action)
+        
+        toolbar.addSeparator()
+        
+        # Кнопка настроек
+        settings_action = QAction("⚙️", self)
+        settings_action.setToolTip("Настройки")
+        settings_action.triggered.connect(lambda: self.show_page('settings'))
+        toolbar.addAction(settings_action)
     
     def create_statusbar(self):
         """Создать строку состояния"""
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
         
-        # Индикатор прогресса
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMaximumWidth(200)
-        self.progress_bar.setVisible(False)
-        self.statusbar.addPermanentWidget(self.progress_bar)
+        # Левая часть: сообщения
+        self.status_label = QLabel("Готов к работе")
+        self.statusbar.addWidget(self.status_label, 1)
+        
+        # Правая часть: индикаторы
+        network_label = QLabel("🌐 Сеть: онлайн")
+        network_label.setStyleSheet("color: #93C47D;")
+        self.statusbar.addPermanentWidget(network_label)
+        
+        memory_label = QLabel("💾 Память: 125/512 МБ")
+        memory_label.setStyleSheet("color: #76A5AF; margin-left: 20px;")
+        self.statusbar.addPermanentWidget(memory_label)
     
-    # ===== Обработчики событий =====
+    def show_help(self):
+        """Показать справку"""
+        QMessageBox.information(self, "Справка", 
+            "ZeroTrust Inspector - Визуализатор и валидатор Zero-Trust политик\n\n"
+            "Используйте боковое меню для навигации:\n"
+            "• 👁️ Обзор сети - дашборд и статистика\n"
+            "• 🔍 Сканер - обнаружение устройств в сети\n"
+            "• 🎨 Конструктор - создание политик безопасности\n"
+            "• ⚙️ Генератор - создание конфигураций для роутеров\n"
+            "• ✅ Валидатор - проверка настроенных правил\n"
+            "• 📊 Отчеты - аналитика и отчеты\n\n"
+            "Горячие клавиши:\n"
+            "F5 - Быстрое сканирование\n"
+            "F9 - Проверка безопасности\n"
+            "F11 - Полный экран\n"
+            "Ctrl+S - Сохранить политику")
+    
+    def toggle_fullscreen(self):
+        """Переключить полноэкранный режим"""
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+    
+    def quick_scan(self):
+        """Быстрое сканирование"""
+        self.status_label.setText("Сканирование сети...")
+        QMessageBox.information(self, "Сканирование", "Запущено быстрое сканирование сети")
+    
+    def validate_security(self):
+        """Проверить безопасность"""
+        self.show_page('validator')
+    
+    def generate_config(self):
+        """Сгенерировать конфигурацию"""
+        self.show_page('generator')
     
     def scan_network(self):
         """Сканировать сеть"""
-        self.statusbar.showMessage("Сканирование сети...")
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-        
-        # Имитация сканирования
-        from PyQt6.QtCore import QTimer
-        self.scan_progress = 0
-        
-        def update_progress():
-            self.scan_progress += 10
-            self.progress_bar.setValue(self.scan_progress)
-            
-            if self.scan_progress >= 100:
-                self.statusbar.showMessage("Сканирование завершено! Найдено 4 устройства")
-                self.progress_bar.setVisible(False)
-                self.timer.stop()
-                
-                # Обновляем список устройств
-                self.device_list.clear()
-                self.device_list.addItem("🖥️ Компьютер (192.168.1.100)")
-                self.device_list.addItem("📱 Смартфон (192.168.1.101)")
-                self.device_list.addItem("💡 Умная лампа (192.168.1.102)")
-                self.device_list.addItem("📷 Камера (192.168.1.103)")
-        
-        self.timer = QTimer()
-        self.timer.timeout.connect(update_progress)
-        self.timer.start(200)
-    
-    def classify_devices(self):
-        """Классифицировать устройства"""
-        QMessageBox.information(self, "Классификация", "Устройства классифицированы!")
-    
-    def validate_policy(self):
-        """Валидировать политику"""
-        result = QMessageBox.information(
-            self,
-            "Валидация политики",
-            "Политика успешно валидирована!\n\nОценка безопасности: 85%\nРекомендации: Усилить изоляцию IoT зоны",
-            QMessageBox.StandardButton.Ok
-        )
+        self.show_page('scanner')
     
     def new_policy(self):
         """Создать новую политику"""
-        reply = QMessageBox.question(
-            self,
-            "Новая политика",
-            "Создать новую политику безопасности?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
+        reply = QMessageBox.question(self, "Новая политика", 
+            "Создать новую политику безопасности?\nТекущие изменения будут потеряны.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         if reply == QMessageBox.StandardButton.Yes:
-            self.statusbar.showMessage("Создана новая политика")
+            self.status_label.setText("Создана новая политика")
     
     def open_policy(self):
         """Открыть политику"""
-        filepath, _ = QFileDialog.getOpenFileName(
-            self,
-            "Открыть политику",
-            "",
-            "JSON Files (*.json);;All Files (*)"
-        )
-        
-        if filepath:
-            self.statusbar.showMessage(f"Открыт файл: {filepath}")
+        # Здесь будет диалог открытия файла
+        self.status_label.setText("Открытие политики...")
     
     def save_policy(self):
         """Сохранить политику"""
-        filepath, _ = QFileDialog.getSaveFileName(
-            self,
-            "Сохранить политику",
-            "policy.json",
-            "JSON Files (*.json)"
-        )
-        
-        if filepath:
-            self.statusbar.showMessage(f"Политика сохранена: {filepath}")
+        self.status_label.setText("Политика сохранена")
+    
+    def import_policy(self):
+        """Импортировать политику"""
+        QMessageBox.information(self, "Импорт", "Импорт политики")
+    
+    def export_policy(self):
+        """Экспортировать политику"""
+        QMessageBox.information(self, "Экспорт", "Экспорт политики")
     
     def export_config(self):
         """Экспортировать конфигурацию"""
-        formats = ["OpenWrt", "pfSense", "Windows Firewall", "IPTables"]
-        format, ok = QInputDialog.getItem(
-            self,
-            "Экспорт конфигурации",
-            "Выберите формат:",
-            formats,
-            0,
-            False
-        )
-        
-        if ok and format:
-            QMessageBox.information(
-                self,
-                "Экспорт",
-                f"Конфигурация для {format} успешно экспортирована!"
-            )
+        self.show_page('generator')
+    
+    def show_documentation(self):
+        """Показать документацию"""
+        QMessageBox.information(self, "Документация", 
+            "Документация доступна по ссылке:\nhttps://github.com/casheshrimp/zero-trust/wiki")
     
     def show_about(self):
         """Показать информацию о программе"""
-        QMessageBox.about(
-            self,
-            "О программе",
-            """
-            <h2>ZeroTrust Inspector v1.0.0</h2>
-            <p>Визуализатор и валидатор Zero-Trust политик</p>
-            <p>Для домашних сетей и малых офисов</p>
-            <hr>
-            <p>Автор: CashShrimp</p>
-            <p>Лицензия: MIT</p>
-            <p>GitHub: github.com/casheshrimp/zero-trust</p>
-            """
-        )
+        QMessageBox.about(self, "О программе",
+            "<h2>ZeroTrust Inspector v1.0.0</h2>"
+            "<p><b>Визуализатор и валидатор Zero-Trust политик</b></p>"
+            "<p>Для домашних сетей и малых офисов</p><hr>"
+            "<p>Автор: CashShrimp</p>"
+            "<p>Лицензия: MIT</p>"
+            "<p>GitHub: github.com/casheshrimp/zero-trust</p>"
+            "<p>Поддержка: zerotrust@example.com</p>")
