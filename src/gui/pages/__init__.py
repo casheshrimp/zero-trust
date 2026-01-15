@@ -5,7 +5,10 @@
 from .dashboard import DashboardPage
 from .scanner import ScannerPage
 from .constructor import ConstructorPage
-from .generator import GeneratorPage
+try:
+    from .generator import GeneratorPage
+except ImportError:
+    GeneratorPage = None  # Временное решение
 from .validator import ValidatorPage
 from .reports import ReportsPage
 from .settings import SettingsPage
