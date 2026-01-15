@@ -39,7 +39,7 @@ class AppStyles:
     # Шрифты
     FONTS = {
         'title': QFont("Segoe UI", 18, QFont.Weight.Bold),
-        'heading': QFont("Segoe UI", 14, QFont.Weight.SemiBold),
+        'heading': QFont("Segoe UI", 14, QFont.Weight.DemiBold),
         'subheading': QFont("Segoe UI", 12, QFont.Weight.Medium),
         'body': QFont("Segoe UI", 10),
         'caption': QFont("Segoe UI", 9),
