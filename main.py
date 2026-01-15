@@ -9,6 +9,8 @@ import os
 import logging
 from pathlib import Path
 
+# Добавляем путь к src в sys.path
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 # Инициализируем логирование
 def setup_logging():
     """Настройка системы логирования"""
@@ -128,7 +130,27 @@ def main():
         
         # Динамический импорт GUI модулей
         try:
-            from src.gui.main_window import MainWindow
+            try:
+                from src.gui.main_window import MainWindow
+            except ImportError as e:
+                print(f"Предупреждение: {e}")
+                # Создаем простую версию
+                from PyQt6.QtWidgets import QMainWindow, QLabel, QVBoxLayout, QWidget
+                from PyQt6.QtCore import Qt
+    
+                class MainWindow(QMainWindow):
+                    def __init__(self):
+                        super().__init__()
+                        self.setWindowTitle("ZeroTrust Inspector")
+                        self.setGeometry(100, 100, 800, 600)
+            
+                        central = QWidget()
+                        self.setCentralWidget(central)
+                        layout = QVBoxLayout(central)
+            
+                        label = QLabel("ZeroTrust Inspector GUI загружен!")
+                        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                        layout.addWidget(label)
         except ImportError as e:
             logger.warning(f"Не удалось импортировать MainWindow: {e}")
             # Создаем простую версию
