@@ -357,4 +357,77 @@ class PolicyValidator:
             param = '-n' if platform.system().lower() == 'windows' else '-c'
             
             result = subprocess.run(
-                ['ping',
+                ['ping', param, str(attempts), '-W', '1', target_ip],
+                capture_output=True,
+                text=True,
+                timeout=attempts + 2
+            )
+            
+            # Парсим вывод ping для получения средней задержки
+            output = result.stdout
+            
+            if 'windows' in platform.system().lower():
+                # Парсинг для Windows
+                import re
+                match = re.search(r'Average = (\d+)ms', output)
+                if match:
+                    return float(match.group(1))
+            else:
+                # Парсинг для Linux/macOS
+                import re
+                match = re.search(r'min/avg/max/.+? = [\d.]+/([\d.]+)/', output)
+                if match:
+                    return float(match.group(1))
+            
+            return None
+            
+        except Exception:
+            return None
+    
+    def _generate_summary(self, test_results: Dict) -> Dict:
+        """Сгенерировать сводку по результатам тестов"""
+        total_tests = 0
+        passed_tests = 0
+        failed_tests = 0
+        
+        issues = []
+        recommendations = []
+        
+        for test_name, test_data in test_results.items():
+            if 'passed' in test_data and 'failed' in test_data:
+                total_tests += test_data['passed'] + test_data['failed']
+                passed_tests += test_data['passed']
+                failed_tests += test_data['failed']
+            
+            # Анализируем проблемы
+            if test_name == 'isolation' and test_data.get('failed', 0) > 0:
+                issues.append("Обнаружены утечки трафика между зонами")
+                recommendations.append("Проверьте правила брандмауэра между зонами")
+            
+            if test_name == 'connectivity' and test_data.get('failed', 0) > 0:
+                issues.append("Проблемы со связностью внутри зон")
+                recommendations.append("Проверьте настройки сети и VLAN")
+            
+            if test_name == 'performance' and test_data.get('average_latency', 0) > 100:
+                issues.append("Высокая задержка в сети")
+                recommendations.append("Проверьте качество соединения и нагрузку на сеть")
+        
+        score = (passed_tests / total_tests * 100) if total_tests > 0 else 0
+        
+        return {
+            'total_tests': total_tests,
+            'passed_tests': passed_tests,
+            'failed_tests': failed_tests,
+            'success_rate': f"{score:.1f}%",
+            'issues': issues,
+            'recommendations': recommendations,
+            'overall_status': 'passed' if score >= 90 else 'warning' if score >= 70 else 'failed'
+        }
+    
+    def stop_validation(self):
+        """Остановить текущую валидацию"""
+        self.is_testing = False
+    
+    def get_latest_results(self) -> List[Dict]:
+        """Получить результаты последней валидации"""
+        return self.test_results.copy()
