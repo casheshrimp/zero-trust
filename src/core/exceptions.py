@@ -15,6 +15,9 @@ class DeviceClassificationError(ZeroTrustError):
     pass
 
 class PolicyValidationError(ZeroTrustError):
+    pass
+    
+class PolicyValidationError(ZeroTrustError):
     """Ошибка валидации политики"""
     pass
 
