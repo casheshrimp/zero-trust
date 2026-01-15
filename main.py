@@ -64,12 +64,12 @@ def show_splash_screen():
     splash = """
     ╔══════════════════════════════════════════════════════╗
     ║                                                      ║
-    ║         ZERO TRUST INSPECTOR v1.0.0                 ║
+    ║         ZERO TRUST INSPECTOR v1.0.0                  ║
     ║                                                      ║
-    ║    Визуализатор и валидатор Zero-Trust политик      ║
-    ║      для домашних сетей и малых офисов              ║
+    ║    Визуализатор и валидатор Zero-Trust политик       ║
+    ║      для домашних сетей и малых офисов               ║
     ║                                                      ║
-    ║                  [ Загрузка... ]                    ║
+    ║                  [ Загрузка... ]                     ║
     ║                                                      ║
     ╚══════════════════════════════════════════════════════╝
     """
@@ -79,21 +79,24 @@ def handle_uncaught_exceptions(exc_type, exc_value, exc_traceback):
     """Обработчик неперехваченных исключений"""
     logger.critical("Неперехваченное исключение:", exc_info=(exc_type, exc_value, exc_traceback))
     
-    from PyQt6.QtWidgets import QMessageBox, QApplication
-    
-    error_msg = f"""
-    ⚠️ КРИТИЧЕСКАЯ ОШИБКА
-    
-    Тип: {exc_type.__name__}
-    Сообщение: {str(exc_value)}
-    
-    Приложение будет закрыто.
-    Подробности в файле logs/zerotrust.log
-    """
-    
-    app = QApplication.instance()
-    if app:
-        QMessageBox.critical(None, "Критическая ошибка", error_msg)
+    try:
+        from PyQt6.QtWidgets import QMessageBox, QApplication
+        
+        error_msg = f"""
+        ⚠️ КРИТИЧЕСКАЯ ОШИБКА
+        
+        Тип: {exc_type.__name__}
+        Сообщение: {str(exc_value)}
+        
+        Приложение будет закрыто.
+        Подробности в файле logs/zerotrust.log
+        """
+        
+        app = QApplication.instance()
+        if app:
+            QMessageBox.critical(None, "Критическая ошибка", error_msg)
+    except:
+        pass
     
     sys.exit(1)
 
@@ -120,8 +123,8 @@ def main():
     
     try:
         # Импортируем здесь, чтобы логирование уже было настроено
-        from PyQt6.QtWidgets import QApplication
-        from PyQt6.QtCore import QTimer
+        from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
+        from PyQt6.QtCore import Qt, QTimer
         
         # Динамический импорт GUI модулей
         try:
@@ -129,7 +132,6 @@ def main():
         except ImportError as e:
             logger.warning(f"Не удалось импортировать MainWindow: {e}")
             # Создаем простую версию
-            from PyQt6.QtWidgets import QMainWindow, QLabel, QVBoxLayout, QWidget
             class MainWindow(QMainWindow):
                 def __init__(self):
                     super().__init__()
@@ -140,8 +142,15 @@ def main():
                     self.setCentralWidget(central)
                     layout = QVBoxLayout(central)
                     
-                    label = QLabel("ZeroTrust Inspector успешно запущен!\n\nИспользуйте меню для работы с приложением.")
-                    label.setAlignment(2)  # Qt.AlignCenter
+                    label = QLabel("""
+                    <h1>ZeroTrust Inspector v1.0.0</h1>
+                    <p>Визуализатор и валидатор Zero-Trust политик</p>
+                    <p>Для домашних сетей и малых офисов</p>
+                    <hr>
+                    <p>✅ Приложение успешно запущено!</p>
+                    <p>⚠️ Расширенные функции временно недоступны</p>
+                    """)
+                    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                     layout.addWidget(label)
         
         logger.info("Инициализация графического интерфейса...")
