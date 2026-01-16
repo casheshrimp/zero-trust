@@ -89,8 +89,7 @@ class ScannerPage(QWidget):
         title.setObjectName("TitleLabel")
         header_layout.addWidget(title)
         
-        from PyQt6.QtWidgets import QSpacerItem, QSizePolicy
-        header_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        layout.addStretch()
         
         self.start_btn = QPushButton("▶ Запуск")
         self.start_btn.setObjectName("primaryButton")
