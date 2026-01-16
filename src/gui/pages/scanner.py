@@ -133,7 +133,7 @@ class ScannerPage(QWidget):
         self.deep_scan_cb = QCheckBox("Глубокое сканирование")
         settings_layout.addWidget(self.deep_scan_cb)
         
-        settings_layout.addSpacerItem(1)
+        settings_layout.addStretch()
         
         layout.addWidget(settings_frame)
         
