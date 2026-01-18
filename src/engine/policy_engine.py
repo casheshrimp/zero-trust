@@ -1,226 +1,152 @@
 """
-Движок для работы с политиками безопасности
+Движок обработки правил безопасности
 """
 
-import json
-from typing import Dict, List, Optional
-from datetime import datetime
+from typing import List, Dict, Optional
 from pathlib import Path
+import jinja2
 
-from ..core.models import (
-    NetworkPolicy, SecurityZone, Rule, ActionType,
-    NetworkDevice
-)
-from ..core.exceptions import PolicyValidationError
+from ..core.models import NetworkPolicy, Rule, SecurityZone
+from ..core.exceptions import RuleGenerationError
 
 class PolicyEngine:
-    """Движок для управления политиками безопасности"""
+    """Движок для обработки и генерации правил безопасности"""
     
-    def __init__(self):
-        self.current_policy = None
-        self.policies = {}  # name -> NetworkPolicy
-        self.templates = {}
+    def __init__(self, templates_dir: Optional[Path] = None):
+        self.templates_dir = templates_dir or Path(__file__).parent / "templates"
+        self.template_env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(self.templates_dir),
+            autoescape=jinja2.select_autoescape()
+        )
+    
+    def generate_firewall_rules(self, policy: NetworkPolicy, 
+                               target_platform: str = "mikrotik") -> str:
+        """
+        Сгенерировать правила брандмауэра для целевой платформы
         
-    def create_policy(self, name: str, description: str = "") -> NetworkPolicy:
-        """Создать новую политику"""
-        policy = NetworkPolicy(name, description)
-        self.current_policy = policy
-        self.policies[name] = policy
-        return policy
-    
-    def load_policy(self, filepath: Path) -> NetworkPolicy:
-        """Загрузить политику из файла"""
+        Args:
+            policy: Политика безопасности
+            target_platform: Целевая платформа (mikrotik, ubiquiti, iptables)
+        
+        Returns:
+            Сгенерированные правила в текстовом формате
+        """
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            # Загружаем шаблон для целевой платформы
+            template_file = f"{target_platform}.j2"
+            template = self.template_env.get_template(template_file)
             
-            policy = NetworkPolicy(
-                name=data['name'],
-                description=data.get('description', '')
-            )
-            
-            # Восстанавливаем зоны
-            for zone_data in data.get('zones', []):
-                zone = SecurityZone(
-                    name=zone_data['name'],
-                    zone_type=zone_data['zone_type'],
-                    description=zone_data.get('description', ''),
-                    color=zone_data.get('color', '#FFFFFF'),
-                    default_policy=ActionType(zone_data.get('default_policy', 'deny'))
-                )
-                policy.add_zone(zone)
-            
-            # Восстанавливаем правила
-            for rule_data in data.get('rules', []):
-                source_zone = policy.zones[rule_data['source_zone']]
-                dest_zone = policy.zones[rule_data['dest_zone']]
-                
-                rule = Rule(
-                    source_zone=source_zone,
-                    destination_zone=dest_zone,
-                    action=ActionType(rule_data['action']),
-                    protocol=rule_data.get('protocol', 'any'),
-                    port=rule_data.get('port'),
-                    description=rule_data.get('description', ''),
-                    enabled=rule_data.get('enabled', True)
-                )
-                policy.add_rule(rule)
-            
-            self.current_policy = policy
-            self.policies[policy.name] = policy
-            
-            return policy
-            
-        except Exception as e:
-            raise PolicyValidationError(f"Ошибка загрузки политики: {e}")
-    
-    def save_policy(self, policy: NetworkPolicy, filepath: Path):
-        """Сохранить политику в файл"""
-        try:
-            data = {
-                'name': policy.name,
-                'description': policy.description,
-                'created_at': policy.created_at.isoformat(),
-                'updated_at': policy.updated_at.isoformat(),
-                'zones': [],
-                'rules': []
+            # Подготавливаем данные для шаблона
+            template_data = {
+                'policy': policy,
+                'zones': list(policy.zones.values()),
+                'rules': policy.rules,
+                'generated_at': '{{ now }}'
             }
             
-            # Сохраняем зоны
-            for zone in policy.zones.values():
-                zone_data = {
-                    'name': zone.name,
-                    'zone_type': zone.zone_type.value,
-                    'description': zone.description,
-                    'color': zone.color,
-                    'default_policy': zone.default_policy.value,
-                    'device_count': zone.device_count
-                }
-                data['zones'].append(zone_data)
+            # Рендерим шаблон
+            return template.render(template_data)
             
-            # Сохраняем правила
-            for rule in policy.rules:
-                rule_data = {
-                    'source_zone': rule.source_zone.name,
-                    'dest_zone': rule.destination_zone.name,
-                    'action': rule.action.value,
-                    'protocol': rule.protocol,
-                    'port': rule.port,
-                    'description': rule.description,
-                    'enabled': rule.enabled
-                }
-                data['rules'].append(rule_data)
-            
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            
+        except jinja2.TemplateNotFound:
+            raise RuleGenerationError(
+                f"Шаблон для платформы '{target_platform}' не найден"
+            )
         except Exception as e:
-            raise PolicyValidationError(f"Ошибка сохранения политики: {e}")
+            raise RuleGenerationError(f"Ошибка генерации правил: {e}")
     
-    def validate_policy(self, policy: NetworkPolicy) -> List[str]:
-        """
-        Валидация политики безопасности
-        Возвращает список предупреждений и ошибок
-        """
-        warnings = []
+    def optimize_rules(self, policy: NetworkPolicy) -> NetworkPolicy:
+        """Оптимизировать правила политики"""
+        # Создаем копию политики
+        optimized_policy = NetworkPolicy(
+            name=f"{policy.name} (оптимизированная)",
+            description=policy.description
+        )
         
-        # Проверка пустых зон
+        # Копируем зоны
         for zone_name, zone in policy.zones.items():
-            if zone.device_count == 0:
-                warnings.append(f"Зона '{zone_name}' пуста")
+            optimized_policy.add_zone(zone)
         
-        # Проверка правил для несуществующих зон
-        for rule in policy.rules:
-            if rule.source_zone.name not in policy.zones:
-                warnings.append(f"Правило ссылается на несуществующую зону: {rule.source_zone.name}")
-            if rule.destination_zone.name not in policy.zones:
-                warnings.append(f"Правило ссылается на несуществующую зону: {rule.destination_zone.name}")
+        # Оптимизируем правила
+        optimized_rules = self._merge_rules(policy.rules)
+        for rule in optimized_rules:
+            optimized_policy.add_rule(rule)
         
-        # Проверка циклических разрешений
-        # (упрощенная проверка - в реальном проекте нужен анализ графа)
-        
-        return warnings
+        return optimized_policy
     
-    def generate_default_rules(self, policy: NetworkPolicy):
-        """Сгенерировать правила по умолчанию для политики"""
-        policy.rules.clear()
-        
-        zone_names = list(policy.zones.keys())
-        
-        # Создаем правила "запретить все" между всеми зонами
-        for i, zone1_name in enumerate(zone_names):
-            for j, zone2_name in enumerate(zone_names):
-                if i != j:  # Не создаем правила для одной и той же зоны
-                    rule = Rule(
-                        source_zone=policy.zones[zone1_name],
-                        destination_zone=policy.zones[zone2_name],
-                        action=ActionType.DENY,
-                        description=f"По умолчанию: {zone1_name} -> {zone2_name}"
-                    )
-                    policy.add_rule(rule)
-        
-        # Добавляем разрешение внутри зон
-        for zone in policy.zones.values():
-            rule = Rule(
-                source_zone=zone,
-                destination_zone=zone,
-                action=ActionType.ALLOW,
-                description=f"Внутренний трафик зоны {zone.name}"
-            )
-            policy.add_rule(rule)
-    
-    def optimize_rules(self, policy: NetworkPolicy):
-        """Оптимизировать правила (удалить дубликаты, объединить похожие)"""
-        # Удаляем дубликаты
-        unique_rules = []
-        seen_rules = set()
-        
-        for rule in policy.rules:
-            rule_key = (
-                rule.source_zone.name,
-                rule.destination_zone.name,
-                rule.action.value,
-                rule.protocol,
-                rule.port
-            )
-            
-            if rule_key not in seen_rules:
-                seen_rules.add(rule_key)
-                unique_rules.append(rule)
-        
-        policy.rules = unique_rules
-        
-        # Сортируем правила для производительности
-        # Более специфичные правила должны идти первыми
-        policy.rules.sort(key=lambda r: (
-            r.protocol != 'any',  # Сначала специфичные протоколы
-            r.port is not None,   # Затем правила с портами
-            r.action.value == 'allow'  # Разрешающие правила после запрещающих
-        ))
-    
-    def find_conflicts(self, policy: NetworkPolicy) -> List[str]:
-        """Найти конфликты в правилах"""
-        conflicts = []
+    def _merge_rules(self, rules: List[Rule]) -> List[Rule]:
+        """Объединить дублирующиеся и противоречивые правила"""
+        merged_rules = []
+        rules_by_pair = {}
         
         # Группируем правила по парам зон
-        rules_by_pair = {}
-        for rule in policy.rules:
+        for rule in rules:
             key = (rule.source_zone.name, rule.destination_zone.name)
             if key not in rules_by_pair:
                 rules_by_pair[key] = []
             rules_by_pair[key].append(rule)
         
-        # Ищем конфликты в каждой паре
-        for (src, dst), rules in rules_by_pair.items():
-            if len(rules) > 1:
-                # Проверяем на противоречивые правила
-                has_allow = any(r.action == ActionType.ALLOW for r in rules)
-                has_deny = any(r.action == ActionType.DENY for r in rules)
+        # Объединяем правила в каждой паре
+        for pair, rule_list in rules_by_pair.items():
+            # Если есть правило DENY, оно имеет приоритет
+            has_deny = any(r.action.value == 'deny' for r in rule_list)
+            
+            if has_deny:
+                # Берем первое правило DENY
+                deny_rule = next(r for r in rule_list if r.action.value == 'deny')
+                merged_rules.append(deny_rule)
+            else:
+                # Берем первое правило ALLOW
+                allow_rule = next(r for r in rule_list if r.action.value == 'allow')
+                merged_rules.append(allow_rule)
+        
+        return merged_rules
+    
+    def validate_rule_conflicts(self, rules: List[Rule]) -> List[Dict]:
+        """Проверить конфликты правил"""
+        conflicts = []
+        
+        # Проверяем все пары правил
+        for i in range(len(rules)):
+            for j in range(i + 1, len(rules)):
+                rule1 = rules[i]
+                rule2 = rules[j]
                 
-                if has_allow and has_deny:
-                    conflicts.append(
-                        f"Конфликт правил между {src} и {dst}: "
-                        f"есть как разрешающие, так и запрещающие правила"
-                    )
+                if self._are_rules_conflicting(rule1, rule2):
+                    conflicts.append({
+                        'rule1': rule1.description or f"Правило {i}",
+                        'rule2': rule2.description or f"Правило {j}",
+                        'conflict': 'Правила противоречат друг другу'
+                    })
         
         return conflicts
+    
+    def _are_rules_conflicting(self, rule1: Rule, rule2: Rule) -> bool:
+        """Проверить, конфликтуют ли два правила"""
+        # Правила конфликтуют если:
+        # 1. Они между одними и теми же зонами
+        # 2. Они имеют противоположные действия (ALLOW vs DENY)
+        # 3. Они применяются к одному порту/протоколу
+        
+        same_zones = (
+            rule1.source_zone.name == rule2.source_zone.name and
+            rule1.destination_zone.name == rule2.destination_zone.name
+        )
+        
+        opposite_actions = (
+            (rule1.action.value == 'allow' and rule2.action.value == 'deny') or
+            (rule1.action.value == 'deny' and rule2.action.value == 'allow')
+        )
+        
+        same_protocol = (
+            rule1.protocol == rule2.protocol or
+            rule1.protocol is None or
+            rule2.protocol is None
+        )
+        
+        same_ports = (
+            rule1.destination_port == rule2.destination_port or
+            rule1.destination_port is None or
+            rule2.destination_port is None
+        )
+        
+        return same_zones and opposite_actions and same_protocol and same_ports
