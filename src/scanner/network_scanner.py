@@ -8,9 +8,9 @@ from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-from ..core.models import NetworkDevice, DeviceType
-from ..core.exceptions import ScanError
-from .device_classifier import DeviceClassifier
+from src.core.models import NetworkDevice, DeviceType
+from src.core.exceptions import ScanError
+from src.scanner.device_classifier import DeviceClassifier
 
 class NetworkScanner:
     """Сканер сетевых устройств"""
