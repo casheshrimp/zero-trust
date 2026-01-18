@@ -3,12 +3,12 @@ ZeroTrust Inspector - Визуализатор и валидатор Zero-Trust 
 """
 
 __version__ = "1.0.0"
-__author__ = "Ваше Имя"
-__email__ = "your.email@example.com"
+__author__ = "ZeroTrust Project"
 
-from .core.models import NetworkDevice, SecurityZone, NetworkPolicy
-from .scanner.network_scanner import NetworkScanner
-from .gui.main_window import MainWindow
+# Абсолютные импорты для предотвращения ошибок
+from src.core.models import NetworkDevice, SecurityZone, NetworkPolicy
+from src.scanner.network_scanner import NetworkScanner
+from src.gui.main_window import MainWindow
 
 __all__ = [
     'NetworkDevice',
