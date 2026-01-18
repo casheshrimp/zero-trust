@@ -1,226 +1,148 @@
 """
-Генератор конфигурационных файлов для разных платформ
+Генератор автоматических правил безопасности
 """
 
-from jinja2 import Environment, FileSystemLoader, TemplateNotFound
-from typing import Dict, List, Optional
-import os
-from pathlib import Path
+from typing import List, Dict
+import random
 
-from ..core.models import NetworkPolicy, Rule, ActionType
-from ..core.constants import TEMPLATES_DIR
-from ..core.exceptions import RuleGenerationError
+from ..core.models import NetworkPolicy, SecurityZone, ZoneType, Rule, ActionType, NetworkDevice
 
 class RuleGenerator:
-    """Генератор правил для разных сетевых устройств"""
-    
-    SUPPORTED_PLATFORMS = {
-        'openwrt': 'OpenWrt / LEDE',
-        'windows': 'Windows Firewall',
-        'iptables': 'IPTables (Linux)',
-        'mikrotik': 'MikroTik RouterOS',
-        'asuswrt': 'ASUSWRT',
-        'pfsense': 'pfSense / OPNsense',
-    }
+    """Генератор автоматических правил безопасности"""
     
     def __init__(self):
-        self.env = Environment(
-            loader=FileSystemLoader(TEMPLATES_DIR),
-            trim_blocks=True,
-            lstrip_blocks=True
-        )
-        
-        # Регистрируем фильтры для Jinja2
-        self.env.filters['ip_to_int'] = self._ip_to_int
-        self.env.filters['cidr_mask'] = self._cidr_mask
+        self.best_practices = self._load_best_practices()
     
-    def generate_config(self, policy: NetworkPolicy, platform: str, 
-                       options: Dict = None) -> str:
-        """
-        Сгенерировать конфигурацию для указанной платформы
-        """
-        if platform not in self.SUPPORTED_PLATFORMS:
-            raise RuleGenerationError(f"Неподдерживаемая платформа: {platform}")
-        
-        if options is None:
-            options = {}
-        
-        try:
-            # Загружаем шаблон
-            template_name = f"{platform}.j2"
-            template = self.env.get_template(template_name)
-            
-            # Подготавливаем данные для шаблона
-            template_data = self._prepare_template_data(policy, platform, options)
-            
-            # Генерируем конфигурацию
-            config = template.render(**template_data)
-            
-            return config
-            
-        except TemplateNotFound:
-            raise RuleGenerationError(f"Шаблон для {platform} не найден")
-        except Exception as e:
-            raise RuleGenerationError(f"Ошибка генерации конфигурации: {e}")
-    
-    def _prepare_template_data(self, policy: NetworkPolicy, platform: str, 
-                              options: Dict) -> Dict:
-        """Подготовить данные для шаблона"""
-        import datetime
-        
-        data = {
-            'policy': policy,
-            'platform': platform,
-            'platform_name': self.SUPPORTED_PLATFORMS[platform],
-            'options': options,
-            'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'generator': 'ZeroTrust Inspector',
-            'version': '1.0.0',
-        }
-        
-        # Добавляем платформ-специфичные данные
-        if platform == 'openwrt':
-            data.update(self._prepare_openwrt_data(policy))
-        elif platform == 'windows':
-            data.update(self._prepare_windows_data(policy))
-        elif platform == 'iptables':
-            data.update(self._prepare_iptables_data(policy))
-        
-        return data
-    
-    def _prepare_openwrt_data(self, policy: NetworkPolicy) -> Dict:
-        """Подготовить данные для OpenWrt"""
-        zones_data = []
-        rules_data = []
-        
-        for zone in policy.zones.values():
-            zone_data = {
-                'name': zone.name.lower().replace(' ', '_'),
-                'display_name': zone.name,
-                'devices': [d.ip_address for d in zone.devices],
-                'color': zone.color,
+    def _load_best_practices(self) -> Dict:
+        """Загрузить лучшие практики безопасности"""
+        return {
+            ZoneType.TRUSTED: {
+                ZoneType.GUEST: {'action': 'deny', 'description': 'Блокировать гостей'},
+                ZoneType.IOT: {'action': 'deny', 'description': 'Изолировать IoT'},
+                ZoneType.DMZ: {'action': 'allow', 'description': 'Доступ к DMZ'},
+            },
+            ZoneType.IOT: {
+                ZoneType.TRUSTED: {'action': 'deny', 'description': 'IoT изолировано'},
+                ZoneType.GUEST: {'action': 'deny', 'description': 'IoT не для гостей'},
+                ZoneType.SERVER: {'action': 'allow', 'description': 'Доступ к серверам'},
+            },
+            ZoneType.GUEST: {
+                ZoneType.TRUSTED: {'action': 'deny', 'description': 'Гости изолированы'},
+                ZoneType.IOT: {'action': 'deny', 'description': 'Нет доступа к IoT'},
+                ZoneType.DMZ: {'action': 'allow', 'description': 'Доступ к интернету'},
             }
-            zones_data.append(zone_data)
+        }
+    
+    def generate_best_practice_rules(self, policy: NetworkPolicy) -> List[Rule]:
+        """Сгенерировать правила на основе лучших практик"""
+        generated_rules = []
         
-        for rule in policy.rules:
-            if not rule.enabled:
-                continue
+        for src_zone_name, src_zone in policy.zones.items():
+            for dst_zone_name, dst_zone in policy.zones.items():
+                if src_zone_name == dst_zone_name:
+                    continue
                 
-            rule_data = {
-                'src_zone': rule.source_zone.name.lower().replace(' ', '_'),
-                'dst_zone': rule.destination_zone.name.lower().replace(' ', '_'),
-                'action': rule.action.value.upper(),
-                'protocol': rule.protocol,
-                'port': rule.port,
-                'description': rule.description,
-            }
-            rules_data.append(rule_data)
+                # Проверяем лучшие практики для этой пары зон
+                src_type = src_zone.zone_type
+                dst_type = dst_zone.zone_type
+                
+                if src_type in self.best_practices and dst_type in self.best_practices[src_type]:
+                    practice = self.best_practices[src_type][dst_type]
+                    
+                    rule = Rule(
+                        source_zone=src_zone,
+                        destination_zone=dst_zone,
+                        action=ActionType(practice['action']),
+                        description=practice['description']
+                    )
+                    
+                    generated_rules.append(rule)
         
-        return {
-            'zones': zones_data,
-            'rules': rules_data,
-        }
+        return generated_rules
     
-    def _prepare_windows_data(self, policy: NetworkPolicy) -> Dict:
-        """Подготовить данные для Windows Firewall"""
-        rules_data = []
+    def generate_device_based_rules(self, policy: NetworkPolicy) -> List[Rule]:
+        """Сгенерировать правила на основе типов устройств"""
+        generated_rules = []
         
-        for rule in policy.rules:
-            if not rule.enabled:
-                continue
-            
-            # Для Windows нужно преобразовать правила в формат PowerShell
-            rule_data = {
-                'name': f"ZeroTrust_{rule.source_zone.name}_to_{rule.destination_zone.name}",
-                'display_name': rule.description or f"{rule.source_zone.name} to {rule.destination_zone.name}",
-                'direction': 'Outbound',  # Можно определить по контексту
-                'action': 'Block' if rule.action == ActionType.DENY else 'Allow',
-                'protocol': rule.protocol.upper() if rule.protocol != 'any' else 'Any',
-                'local_ports': rule.port if rule.port else 'Any',
-                'remote_addresses': [d.ip_address for d in rule.destination_zone.devices],
-            }
-            rules_data.append(rule_data)
+        # Правила для IoT устройств
+        iot_zones = [z for z in policy.zones.values() if z.zone_type == ZoneType.IOT]
         
-        return {
-            'rules': rules_data,
-            'profile': 'Domain,Private,Public',
-        }
+        for iot_zone in iot_zones:
+            for device in iot_zone.devices:
+                # IoT устройствам разрешаем только необходимые порты
+                if device.open_ports:
+                    for port in device.open_ports:
+                        # Правило для конкретного порта
+                        rule = Rule(
+                            source_zone=iot_zone,
+                            destination_zone=iot_zone,
+                            action=ActionType.ALLOW,
+                            protocol="tcp",
+                            destination_port=str(port),
+                            description=f"Разрешить порт {port} для IoT устройства"
+                        )
+                        generated_rules.append(rule)
+        
+        return generated_rules
     
-    def _prepare_iptables_data(self, policy: NetworkPolicy) -> Dict:
-        """Подготовить данные для IPTables"""
-        chains_data = {}
-        rules_data = []
+    def generate_segmentation_rules(self, policy: NetworkPolicy) -> List[Rule]:
+        """Сгенерировать правила сегментации сети"""
+        generated_rules = []
         
-        # Создаем цепочки для каждой зоны
-        for zone in policy.zones.values():
-            chain_name = f"ZONE_{zone.name.upper().replace(' ', '_')}"
-            chains_data[zone.name] = {
-                'chain': chain_name,
-                'devices': [d.ip_address for d in zone.devices],
-            }
+        zones = list(policy.zones.values())
         
-        # Создаем правила
-        for rule in policy.rules:
-            if not rule.enabled:
-                continue
-            
-            src_chain = chains_data[rule.source_zone.name]['chain']
-            dst_chain = chains_data[rule.destination_zone.name]['chain']
-            
-            rule_data = {
-                'src_chain': src_chain,
-                'dst_chain': dst_chain,
-                'action': rule.action.value.upper(),
-                'protocol': rule.protocol,
-                'dport': f'--dport {rule.port}' if rule.port else '',
-                'comment': f'-m comment --comment "{rule.description}"' if rule.description else '',
-            }
-            rules_data.append(rule_data)
+        # Разрешаем все внутри зоны
+        for zone in zones:
+            rule = Rule(
+                source_zone=zone,
+                destination_zone=zone,
+                action=ActionType.ALLOW,
+                description=f"Разрешить трафик внутри зоны {zone.name}"
+            )
+            generated_rules.append(rule)
         
-        return {
-            'chains': chains_data,
-            'rules': rules_data,
-        }
+        # По умолчанию запрещаем все между зонами
+        for i, src_zone in enumerate(zones):
+            for j, dst_zone in enumerate(zones):
+                if i != j:
+                    rule = Rule(
+                        source_zone=src_zone,
+                        destination_zone=dst_zone,
+                        action=ActionType.DENY,
+                        description=f"Запретить трафик из {src_zone.name} в {dst_zone.name}"
+                    )
+                    generated_rules.append(rule)
+        
+        return generated_rules
     
-    def _ip_to_int(self, ip_address: str) -> int:
-        """Конвертировать IP-адрес в целое число"""
-        parts = ip_address.split('.')
-        return (int(parts[0]) << 24) + (int(parts[1]) << 16) + (int(parts[2]) << 8) + int(parts[3])
-    
-    def _cidr_mask(self, prefix_length: int) -> str:
-        """Конвертировать длину префикса в маску сети"""
-        mask = (0xffffffff << (32 - prefix_length)) & 0xffffffff
-        return '.'.join([str(mask >> (i << 3) & 0xff) for i in range(3, -1, -1)])
-    
-    def get_platform_instructions(self, platform: str) -> str:
-        """Получить инструкции по применению для платформы"""
-        instructions = {
-            'openwrt': """
-            1. Скопируйте конфигурацию выше
-            2. Откройте веб-интерфейс роутера (обычно 192.168.1.1)
-            3. Перейдите в раздел Network → Firewall
-            4. Нажмите "Edit" для конфигурации брандмауэра
-            5. Вставьте конфигурацию и сохраните
-            6. Перезагрузите брандмауэр или роутер
-            """,
-            
-            'windows': """
-            1. Сохраните скрипт как .ps1 файл
-            2. Запустите PowerShell от имени администратора
-            3. Перейдите в папку со скриптом: cd C:\путь\к\скрипту
-            4. Разрешите выполнение скриптов: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-            5. Запустите скрипт: .\\имя_скрипта.ps1
-            6. Проверьте правила: Get-NetFirewallRule | Where-Object {$_.DisplayName -like "ZeroTrust*"}
-            """,
-            
-            'iptables': """
-            1. Сохраните скрипт как .sh файл
-            2. Сделайте его исполняемым: chmod +x имя_скрипта.sh
-            3. Запустите от root: sudo ./имя_скрипта.sh
-            4. Чтобы сохранить правила после перезагрузки:
-               - Для Ubuntu/Debian: iptables-save > /etc/iptables/rules.v4
-               - Для CentOS/RHEL: service iptables save
-            """,
-        }
+    def generate_web_filtering_rules(self, policy: NetworkPolicy) -> List[Rule]:
+        """Сгенерировать правила фильтрации веб-трафика"""
+        generated_rules = []
         
-        return instructions.get(platform, "Инструкции для этой платформы пока недоступны.")
+        # Правила для гостевой сети
+        guest_zones = [z for z in policy.zones.values() if z.zone_type == ZoneType.GUEST]
+        
+        for guest_zone in guest_zones:
+            # Запретить торренты
+            rule = Rule(
+                source_zone=guest_zone,
+                destination_zone=guest_zone,
+                action=ActionType.DENY,
+                protocol="tcp",
+                destination_port="6881-6889",
+                description="Блокировать торрент-трафик в гостевой сети"
+            )
+            generated_rules.append(rule)
+            
+            # Запретить небезопасные порты
+            rule = Rule(
+                source_zone=guest_zone,
+                destination_zone=guest_zone,
+                action=ActionType.DENY,
+                protocol="tcp",
+                destination_port="23,135-139,445",
+                description="Блокировать небезопасные порты"
+            )
+            generated_rules.append(rule)
+        
+        return generated_rules
