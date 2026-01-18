@@ -2,177 +2,128 @@
 Холст для визуализации сети
 """
 
-from PyQt6.QtWidgets import (
-    QGraphicsView, QGraphicsScene, QMenu, QGraphicsItem
-)
-from PyQt6.QtCore import Qt, QRectF, pyqtSignal
-from PyQt6.QtGui import (
-    QPainter, QBrush, QPen, QColor, QMouseEvent
-)
+from PyQt6.QtWidgets import QWidget, QLabel
+from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QFont
+from PyQt6.QtCore import Qt, QRect, QPoint
 
-from ...core.models import NetworkDevice, SecurityZone
-from .device_item import DeviceItem
+from ....core.models import NetworkPolicy, SecurityZone, NetworkDevice
 
-class NetworkCanvas(QGraphicsView):
-    """Холст для отображения сети"""
-    
-    device_dropped = pyqtSignal(str, str)  # device_id, zone_name
-    selection_changed = pyqtSignal(list)
+class NetworkCanvas(QWidget):
+    """Холст для визуализации сетевой топологии"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.scene = QGraphicsScene(self)
-        self.setScene(self.scene)
-        
+        self.policy = None
+        self.selected_zone = None
         self.setup_ui()
-        self.zones = {}
-        self.device_items = {}
-        
+    
     def setup_ui(self):
-        """Настройка интерфейса холста"""
-        self.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
-        self.setAcceptDrops(True)
-        
-        # Настройка сцены
-        self.scene.setSceneRect(-500, -500, 1000, 1000)
-        self.setSceneRect(-500, -500, 1000, 1000)
-        
-        # Включаем масштабирование колесом мыши
-        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
-        
-        # Фон
-        self.setBackgroundBrush(QBrush(QColor(245, 245, 245)))
+        """Настроить холст"""
+        self.setMinimumSize(600, 400)
+        self.setStyleSheet("background-color: white;")
     
-    def add_zone(self, zone: SecurityZone, position=None):
-        """Добавить зону на холст"""
-        from .zone_widget import ZoneWidget
-        
-        if position is None:
-            position = self._calculate_zone_position(len(self.zones))
-        
-        zone_item = ZoneWidget(zone, position[0], position[1])
-        self.scene.addItem(zone_item)
-        self.zones[zone.name] = zone_item
-        
-        return zone_item
+    def set_policy(self, policy: NetworkPolicy):
+        """Установить политику для отображения"""
+        self.policy = policy
+        self.update()
     
-    def _calculate_zone_position(self, index: int):
-        """Рассчитать позицию для новой зоны"""
-        positions = [
-            (-300, -300), (300, -300),
-            (-300, 300), (300, 300),
-            (0, -300), (0, 300),
-            (-300, 0), (300, 0),
-        ]
-        
-        if index < len(positions):
-            return positions[index]
-        else:
-            x = ((index * 250) % 1000) - 500
-            y = ((index * 250) // 1000 * 250) - 500
-            return (x, y)
-    
-    def remove_zone(self, zone_name: str):
-        """Удалить зону с холста"""
-        if zone_name in self.zones:
-            zone_item = self.zones[zone_name]
-            self.scene.removeItem(zone_item)
-            del self.zones[zone_name]
-    
-    def add_device_to_zone(self, device: NetworkDevice, zone_name: str):
-        """Добавить устройство в зону"""
-        if zone_name not in self.zones:
+    def paintEvent(self, event):
+        """Отрисовка сети"""
+        if not self.policy:
             return
         
-        zone_item = self.zones[zone_name]
-        device_item = zone_item.add_device(device)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        if device_item:
-            self.device_items[device.ip_address] = (device_item, zone_item)
-    
-    def remove_device(self, device_ip: str):
-        """Удалить устройство с холста"""
-        if device_ip in self.device_items:
-            device_item, zone_item = self.device_items[device_ip]
-            zone_item.remove_device_item(device_item)
-            del self.device_items[device_ip]
-    
-    def clear_canvas(self):
-        """Очистить холст"""
-        self.zones.clear()
-        self.device_items.clear()
-        self.scene.clear()
-    
-    def get_selected_devices(self):
-        """Получить выделенные устройства"""
-        selected = []
-        for item in self.scene.selectedItems():
-            if hasattr(item, 'device'):
-                selected.append(item.device)
-        return selected
-    
-    def wheelEvent(self, event):
-        """Обработка колеса мыши для масштабирования"""
-        zoom_factor = 1.15
-        if event.angleDelta().y() > 0:
-            self.scale(zoom_factor, zoom_factor)
-        else:
-            self.scale(1.0 / zoom_factor, 1.0 / zoom_factor)
-    
-    def mousePressEvent(self, event: QMouseEvent):
-        """Обработка нажатия мыши"""
-        if event.button() == Qt.MouseButton.RightButton:
-            self.show_context_menu(event.pos())
-        else:
-            super().mousePressEvent(event)
-    
-    def show_context_menu(self, position):
-        """Показать контекстное меню холста"""
-        menu = QMenu(self)
+        # Очищаем фон
+        painter.fillRect(self.rect(), QColor(255, 255, 255))
         
-        menu.addAction("📐 Автоматически расположить")
-        menu.addSeparator()
-        menu.addAction("🗑️ Очистить холст")
-        menu.addSeparator()
-        menu.addAction("💾 Сохранить схему...")
+        # Рисуем зоны
+        zones = list(self.policy.zones.values())
+        zone_rects = []
         
-        action = menu.exec(self.mapToGlobal(position))
-        
-        if action:
-            if action.text() == "📐 Автоматически расположить":
-                self.auto_arrange()
-            elif action.text() == "🗑️ Очистить холст":
-                self.clear_canvas()
-            elif action.text() == "💾 Сохранить схему...":
-                self.export_scheme()
-    
-    def auto_arrange(self):
-        """Автоматически расположить зоны"""
-        zones = list(self.zones.values())
         for i, zone in enumerate(zones):
-            x, y = self._calculate_zone_position(i)
-            zone.setPos(x, y)
+            # Позиция зоны
+            x = 50 + (i % 3) * 200
+            y = 50 + (i // 3) * 150
+            
+            # Цвет зоны
+            color = self._get_zone_color(zone.zone_type.value)
+            
+            # Рисуем прямоугольник зоны
+            painter.setBrush(QBrush(color, Qt.BrushStyle.SolidPattern))
+            painter.setPen(QPen(QColor(0, 0, 0), 2))
+            rect = QRect(x, y, 180, 120)
+            painter.drawRoundedRect(rect, 10, 10)
+            
+            # Название зоны
+            painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter, 
+                           zone.name)
+            
+            # Количество устройств
+            device_text = f"Устройств: {zone.device_count}"
+            painter.setFont(QFont("Arial", 8))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+                           device_text)
+            
+            zone_rects.append((zone, rect))
+        
+        # Рисуем соединения между зонами (правила)
+        painter.setPen(QPen(QColor(100, 100, 100), 1, Qt.PenStyle.DashLine))
+        
+        for rule in self.policy.rules:
+            src_index = zones.index(rule.source_zone)
+            dst_index = zones.index(rule.destination_zone)
+            
+            if src_index < len(zone_rects) and dst_index < len(zone_rects):
+                src_rect = zone_rects[src_index][1]
+                dst_rect = zone_rects[dst_index][1]
+                
+                # Центры прямоугольников
+                src_center = src_rect.center()
+                dst_center = dst_rect.center()
+                
+                # Цвет линии в зависимости от действия
+                if rule.action.value == 'allow':
+                    painter.setPen(QPen(QColor(40, 167, 69), 2))  # Зеленый
+                else:
+                    painter.setPen(QPen(QColor(220, 53, 69), 2))  # Красный
+                
+                # Рисуем линию
+                painter.drawLine(src_center, dst_center)
+                
+                # Стрелка
+                self._draw_arrow(painter, src_center, dst_center)
     
-    def export_scheme(self):
-        """Экспортировать схему в изображение"""
-        from PyQt6.QtWidgets import QFileDialog
+    def _get_zone_color(self, zone_type: str) -> QColor:
+        """Получить цвет для типа зоны"""
+        colors = {
+            "trusted": QColor(76, 175, 80),
+            "dmz": QColor(255, 193, 7),
+            "iot": QColor(156, 39, 176),
+            "guest": QColor(33, 150, 243),
+            "server": QColor(244, 67, 54),
+            "custom": QColor(158, 158, 158)
+        }
+        return colors.get(zone_type, QColor(200, 200, 200))
+    
+    def _draw_arrow(self, painter: QPainter, start: QPoint, end: QPoint):
+        """Нарисовать стрелку"""
+        import math
         
-        filepath, _ = QFileDialog.getSaveFileName(
-            self, "Сохранить схему", "", "PNG (*.png);;JPEG (*.jpg)"
-        )
+        # Длина стрелки
+        arrow_length = 10
         
-        if filepath:
-            # Создаем изображение всей сцены
-            from PyQt6.QtGui import QImage, QPainter
-            
-            rect = self.scene.itemsBoundingRect()
-            image = QImage(rect.width(), rect.height(), QImage.Format.Format_ARGB32)
-            image.fill(Qt.GlobalColor.white)
-            
-            painter = QPainter(image)
-            self.scene.render(painter)
-            painter.end()
-            
-            image.save(filepath)
+        # Угол линии
+        angle = math.atan2(end.y() - start.y(), end.x() - start.x())
+        
+        # Координаты стрелки
+        x1 = end.x() - arrow_length * math.cos(angle - math.pi/6)
+        y1 = end.y() - arrow_length * math.sin(angle - math.pi/6)
+        x2 = end.x() - arrow_length * math.cos(angle + math.pi/6)
+        y2 = end.y() - arrow_length * math.sin(angle + math.pi/6)
+        
+        # Рисуем стрелку
+        painter.drawLine(end, QPoint(int(x1), int(y1)))
+        painter.drawLine(end, QPoint(int(x2), int(y2)))
