@@ -7,9 +7,9 @@ from typing import Dict, Optional
 import json
 from pathlib import Path
 
-from ..core.models import NetworkDevice, DeviceType
-from ..core.constants import ASSETS_DIR
-from ..core.exceptions import DeviceClassificationError
+from src.core.models import NetworkDevice, DeviceType
+from src.core.constants import ASSETS_DIR
+from src.core.exceptions import DeviceClassificationError
 
 class DeviceClassifier:
     """Классификатор сетевых устройств"""
