@@ -2,9 +2,9 @@
 Модуль сканирования сети
 """
 
-from .network_scanner import NetworkScanner
-from .device_classifier import DeviceClassifier
-from .fingerprint_db import FingerprintDatabase
+from src.scanner.network_scanner import NetworkScanner
+from src.scanner.device_classifier import DeviceClassifier
+from src.scanner.fingerprint_db import FingerprintDatabase
 
 __all__ = [
     'NetworkScanner',
