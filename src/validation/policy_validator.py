@@ -10,8 +10,8 @@ from typing import List, Dict, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from ..core.models import NetworkPolicy, Rule, ActionType, SecurityZone
-from ..core.exceptions import PolicyValidationError
+from src.core.models import NetworkPolicy, Rule, ActionType, SecurityZone
+from src.core.exceptions import PolicyValidationError
 
 class PolicyValidator:
     """Валидатор для проверки корректности политик безопасности"""
