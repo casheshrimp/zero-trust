@@ -6,17 +6,14 @@ class ZeroTrustError(Exception):
     """Базовое исключение для ZeroTrust Inspector"""
     pass
 
-class NetworkScanError(ZeroTrustError):
-    """Ошибка сканирования сети"""
+class ScanError(ZeroTrustError):
+    """Ошибки сканирования"""
     pass
 
 class DeviceClassificationError(ZeroTrustError):
     """Ошибка классификации устройства"""
     pass
 
-class PolicyValidationError(ZeroTrustError):
-    pass
-    
 class PolicyValidationError(ZeroTrustError):
     """Ошибка валидации политики"""
     pass
