@@ -7,29 +7,116 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QProgressBar, QMessageBox, QListWidget,
     QSplitter, QGroupBox, QTreeWidget, QTreeWidgetItem
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, pyqtSlot
 from PyQt6.QtGui import QIcon, QFont
 
 # Используем абсолютные импорты
-from src.core.models import NetworkDevice, SecurityZone, NetworkPolicy
-from src.scanner.network_scanner import NetworkScanner
-from src.validation.policy_validator import PolicyValidator
+from src.core.models import NetworkDevice, SecurityZone, NetworkPolicy, ZoneType, ActionType
+
+class ScanThread(QThread):
+    """Поток для выполнения сканирования"""
+    scan_progress = pyqtSignal(int)
+    scan_completed = pyqtSignal(list)
+    scan_error = pyqtSignal(str)
+    
+    def __init__(self, network_range="192.168.1.0/24"):
+        super().__init__()
+        self.network_range = network_range
+        self.running = True
+    
+    def run(self):
+        """Выполнить сканирование в отдельном потоке"""
+        try:
+            devices = []
+            
+            # Имитация сканирования с прогрессом
+            test_devices = [
+                NetworkDevice("192.168.1.1", "00:11:22:33:44:55", "router", vendor="TP-Link"),
+                NetworkDevice("192.168.1.10", "AA:BB:CC:DD:EE:FF", "home-pc", vendor="Dell"),
+                NetworkDevice("192.168.1.20", "11:22:33:44:55:66", "phone", vendor="Samsung"),
+                NetworkDevice("192.168.1.30", "FF:EE:DD:CC:BB:AA", "smart-tv", vendor="Sony"),
+                NetworkDevice("192.168.1.40", "22:33:44:55:66:77", "printer", vendor="HP"),
+            ]
+            
+            for i, device in enumerate(test_devices):
+                if not self.running:
+                    break
+                    
+                # Имитация задержки сканирования
+                self.msleep(200)
+                
+                # Обновляем прогресс
+                progress = int((i + 1) / len(test_devices) * 100)
+                self.scan_progress.emit(progress)
+                
+                devices.append(device)
+            
+            if self.running:
+                self.scan_completed.emit(devices)
+                
+        except Exception as e:
+            self.scan_error.emit(str(e))
+    
+    def stop(self):
+        """Остановить сканирование"""
+        self.running = False
+
+class ValidationThread(QThread):
+    """Поток для выполнения валидации"""
+    validation_progress = pyqtSignal(int)
+    validation_completed = pyqtSignal(dict)
+    validation_error = pyqtSignal(str)
+    
+    def __init__(self, policy):
+        super().__init__()
+        self.policy = policy
+        self.running = True
+    
+    def run(self):
+        """Выполнить валидацию в отдельном потоке"""
+        try:
+            # Имитация валидации с прогрессом
+            for i in range(1, 101):
+                if not self.running:
+                    break
+                    
+                self.msleep(30)
+                self.validation_progress.emit(i)
+            
+            if self.running:
+                # Тестовые результаты
+                results = {
+                    'summary': {
+                        'total_tests': 12,
+                        'passed_tests': 10,
+                        'failed_tests': 2,
+                        'success_rate': '83.3%',
+                        'overall_status': 'warning',
+                        'issues': ['Обнаружены утечки трафика между зонами'],
+                        'recommendations': ['Добавьте правило блокировки из IoT в Trusted']
+                    }
+                }
+                self.validation_completed.emit(results)
+                
+        except Exception as e:
+            self.validation_error.emit(str(e))
+    
+    def stop(self):
+        """Остановить валидацию"""
+        self.running = False
 
 class MainWindow(QMainWindow):
     """Главное окно ZeroTrust Inspector"""
     
-    scan_completed = pyqtSignal(list)
-    validation_completed = pyqtSignal(dict)
-    
     def __init__(self):
         super().__init__()
-        self.scanner = NetworkScanner()
-        self.validator = PolicyValidator()
+        self.scan_thread = None
+        self.validation_thread = None
         self.current_policy = None
         
         self.setup_ui()
         self.setup_connections()
-        
+    
     def setup_ui(self):
         """Настроить пользовательский интерфейс"""
         self.setWindowTitle("ZeroTrust Inspector v1.0.0")
@@ -65,6 +152,7 @@ class MainWindow(QMainWindow):
         # Статус бар
         self.status_bar = self.statusBar()
         self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedWidth(200)
         self.status_bar.addPermanentWidget(self.progress_bar)
         self.progress_bar.hide()
         
@@ -77,6 +165,10 @@ class MainWindow(QMainWindow):
         self.btn_scan = QPushButton("🔍 Сканировать сеть")
         self.btn_scan.setToolTip("Запустить сканирование сети")
         
+        self.btn_stop_scan = QPushButton("⏹️ Остановить")
+        self.btn_stop_scan.setToolTip("Остановить текущее сканирование")
+        self.btn_stop_scan.setEnabled(False)
+        
         self.btn_validate = QPushButton("✅ Валидировать")
         self.btn_validate.setToolTip("Валидировать текущую политику")
         
@@ -87,6 +179,7 @@ class MainWindow(QMainWindow):
         self.btn_settings.setToolTip("Настройки приложения")
         
         layout.addWidget(self.btn_scan)
+        layout.addWidget(self.btn_stop_scan)
         layout.addWidget(self.btn_validate)
         layout.addWidget(self.btn_export)
         layout.addWidget(self.btn_settings)
@@ -290,51 +383,63 @@ class MainWindow(QMainWindow):
     def setup_connections(self):
         """Настроить соединения сигналов и слотов"""
         self.btn_scan.clicked.connect(self.start_scan)
+        self.btn_stop_scan.clicked.connect(self.stop_scan)
         self.btn_validate.clicked.connect(self.start_validation)
         self.btn_test_policy.clicked.connect(self.create_test_policy)
-        
-        self.scan_completed.connect(self.on_scan_completed)
-        self.validation_completed.connect(self.on_validation_completed)
         
         self.devices_list.itemClicked.connect(self.on_device_selected)
         self.zones_list.itemClicked.connect(self.on_zone_selected)
     
     def start_scan(self):
         """Запустить сканирование сети"""
-        try:
-            self.progress_bar.show()
-            self.progress_bar.setValue(0)
-            self.status_bar.showMessage("Сканирование сети...")
-            
-            # Симуляция сканирования для демонстрации
-            import threading
-            scan_thread = threading.Thread(target=self.simulate_scan)
-            scan_thread.start()
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Ошибка сканирования: {e}")
+        if self.scan_thread and self.scan_thread.isRunning():
+            QMessageBox.warning(self, "Сканирование", "Сканирование уже выполняется")
+            return
+        
+        # Очищаем старые результаты
+        self.devices_list.clear()
+        
+        # Показываем прогресс
+        self.progress_bar.show()
+        self.progress_bar.setValue(0)
+        self.status_bar.showMessage("Сканирование сети...")
+        
+        # Обновляем состояние кнопок
+        self.btn_scan.setEnabled(False)
+        self.btn_stop_scan.setEnabled(True)
+        
+        # Создаем и запускаем поток сканирования
+        self.scan_thread = ScanThread()
+        self.scan_thread.scan_progress.connect(self.on_scan_progress)
+        self.scan_thread.scan_completed.connect(self.on_scan_completed)
+        self.scan_thread.scan_error.connect(self.on_scan_error)
+        self.scan_thread.finished.connect(self.on_scan_finished)
+        
+        self.scan_thread.start()
     
-    def simulate_scan(self):
-        """Симуляция сканирования (для демонстрации)"""
-        import time
-        
-        for i in range(1, 101):
-            time.sleep(0.05)  # Имитация работы
-            self.progress_bar.setValue(i)
-        
-        # Тестовые результаты
-        test_devices = [
-            NetworkDevice("192.168.1.10", "00:11:22:33:44:55", "Home-PC"),
-            NetworkDevice("192.168.1.20", "AA:BB:CC:DD:EE:FF", "Phone"),
-            NetworkDevice("192.168.1.30", "11:22:33:44:55:66", "Smart-TV"),
-        ]
-        
-        time.sleep(0.5)
-        self.scan_completed.emit(test_devices)
+    def stop_scan(self):
+        """Остановить сканирование"""
+        if self.scan_thread and self.scan_thread.isRunning():
+            self.scan_thread.stop()
+            self.status_bar.showMessage("Сканирование остановлено")
     
+    @pyqtSlot(int)
+    def on_scan_progress(self, progress):
+        """Обновить прогресс сканирования"""
+        self.progress_bar.setValue(progress)
+    
+    @pyqtSlot(list)
     def on_scan_completed(self, devices):
         """Обработчик завершения сканирования"""
-        self.progress_bar.hide()
+        # Обновляем список устройств
+        for device in devices:
+            item = QTreeWidgetItem([
+                device.hostname or "Неизвестно",
+                device.ip_address,
+                getattr(device, 'device_type', 'unknown')
+            ])
+            self.devices_list.addTopLevelItem(item)
+        
         self.status_bar.showMessage(f"Найдено {len(devices)} устройств")
         
         # Обновляем визуализацию
@@ -345,9 +450,22 @@ class MainWindow(QMainWindow):
         <p>Создайте зоны безопасности и настройте правила.</p>
         </center>
         """)
+    
+    @pyqtSlot(str)
+    def on_scan_error(self, error_message):
+        """Обработчик ошибки сканирования"""
+        self.status_bar.showMessage(f"Ошибка сканирования: {error_message}")
+        QMessageBox.critical(self, "Ошибка сканирования", error_message)
+    
+    def on_scan_finished(self):
+        """Очистка после завершения сканирования"""
+        self.progress_bar.hide()
+        self.btn_scan.setEnabled(True)
+        self.btn_stop_scan.setEnabled(False)
         
-        QMessageBox.information(self, "Сканирование завершено", 
-                              f"Найдено {len(devices)} активных устройств")
+        if self.scan_thread:
+            self.scan_thread.deleteLater()
+            self.scan_thread = None
     
     def start_validation(self):
         """Запустить валидацию политики"""
@@ -356,46 +474,32 @@ class MainWindow(QMainWindow):
                               "Сначала создайте тестовую политику или загрузите существующую")
             return
         
-        try:
-            self.progress_bar.show()
-            self.progress_bar.setValue(0)
-            self.status_bar.showMessage("Валидация политики...")
-            
-            # Симуляция валидации
-            import threading
-            validation_thread = threading.Thread(target=self.simulate_validation)
-            validation_thread.start()
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Ошибка валидации: {e}")
+        if self.validation_thread and self.validation_thread.isRunning():
+            QMessageBox.warning(self, "Валидация", "Валидация уже выполняется")
+            return
+        
+        # Показываем прогресс
+        self.progress_bar.show()
+        self.progress_bar.setValue(0)
+        self.status_bar.showMessage("Валидация политики...")
+        
+        # Создаем и запускаем поток валидации
+        self.validation_thread = ValidationThread(self.current_policy)
+        self.validation_thread.validation_progress.connect(self.on_validation_progress)
+        self.validation_thread.validation_completed.connect(self.on_validation_completed)
+        self.validation_thread.validation_error.connect(self.on_validation_error)
+        self.validation_thread.finished.connect(self.on_validation_finished)
+        
+        self.validation_thread.start()
     
-    def simulate_validation(self):
-        """Симуляция валидации"""
-        import time
-        
-        for i in range(1, 101):
-            time.sleep(0.03)
-            self.progress_bar.setValue(i)
-        
-        # Тестовые результаты
-        results = {
-            'summary': {
-                'total_tests': 12,
-                'passed_tests': 10,
-                'failed_tests': 2,
-                'success_rate': '83.3%',
-                'overall_status': 'warning',
-                'issues': ['Обнаружены утечки трафика между зонами'],
-                'recommendations': ['Добавьте правило блокировки из IoT в Trusted']
-            }
-        }
-        
-        time.sleep(0.5)
-        self.validation_completed.emit(results)
+    @pyqtSlot(int)
+    def on_validation_progress(self, progress):
+        """Обновить прогресс валидации"""
+        self.progress_bar.setValue(progress)
     
+    @pyqtSlot(dict)
     def on_validation_completed(self, results):
         """Обработчик завершения валидации"""
-        self.progress_bar.hide()
         self.status_bar.showMessage("Валидация завершена")
         
         # Обновляем результаты
@@ -421,12 +525,24 @@ class MainWindow(QMainWindow):
         </ul>
         """)
     
+    @pyqtSlot(str)
+    def on_validation_error(self, error_message):
+        """Обработчик ошибки валидации"""
+        self.status_bar.showMessage(f"Ошибка валидации: {error_message}")
+        QMessageBox.critical(self, "Ошибка валидации", error_message)
+    
+    def on_validation_finished(self):
+        """Очистка после завершения валидации"""
+        self.progress_bar.hide()
+        
+        if self.validation_thread:
+            self.validation_thread.deleteLater()
+            self.validation_thread = None
+    
     def create_test_policy(self):
         """Создать тестовую политику"""
         try:
             # Создаем тестовую политику
-            from src.core.models import ZoneType, ActionType
-            
             policy = NetworkPolicy(
                 name="Тестовая политика",
                 description="Пример политики Zero Trust для домашней сети"
@@ -506,3 +622,16 @@ class MainWindow(QMainWindow):
         <h4>Политика безопасности:</h4>
         <p>Высокий уровень безопасности. Разрешен доступ к интернету и внутренним ресурсам.</p>
         """)
+    
+    def closeEvent(self, event):
+        """Обработчик закрытия окна"""
+        # Останавливаем все потоки
+        if self.scan_thread and self.scan_thread.isRunning():
+            self.scan_thread.stop()
+            self.scan_thread.wait(1000)
+        
+        if self.validation_thread and self.validation_thread.isRunning():
+            self.validation_thread.stop()
+            self.validation_thread.wait(1000)
+        
+        event.accept()
