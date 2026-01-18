@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """
 ZeroTrust Inspector - Главный файл приложения
-Визуализатор и валидатор Zero-Trust политик для домашних сетей и малых офисов
 """
 
 import sys
-import os
 import logging
 from pathlib import Path
 
@@ -35,27 +33,7 @@ def check_dependencies():
     try:
         import PyQt6
     except ImportError:
-        missing_deps.append("PyQt6 - библиотека для графического интерфейса")
-    
-    try:
-        import nmap
-    except ImportError:
-        missing_deps.append("python-nmap - для сканирования сети")
-    
-    try:
-        import jinja2
-    except ImportError:
-        missing_deps.append("Jinja2 - для генерации конфигураций")
-    
-    try:
-        import scapy
-    except ImportError:
-        missing_deps.append("scapy - для работы с сетевыми пакетами")
-    
-    try:
-        import psutil
-    except ImportError:
-        missing_deps.append("psutil - для системной информации")
+        missing_deps.append("PyQt6")
     
     if missing_deps:
         logger.error("Отсутствуют необходимые зависимости:")
@@ -64,7 +42,7 @@ def check_dependencies():
         
         print("\n❌ ОШИБКА: Отсутствуют необходимые библиотеки")
         print("Установите их командой:")
-        print("pip install PyQt6 python-nmap jinja2 scapy psutil netifaces PyYAML")
+        print("pip install PyQt6")
         return False
     
     return True
@@ -136,7 +114,7 @@ def main():
         from PyQt6.QtWidgets import QApplication
         from PyQt6.QtCore import QTimer
         
-        # Импорт модулей приложения
+        # Пробуем импортировать главное окно
         try:
             from src.gui.main_window import MainWindow
             logger.info("GUI модуль успешно импортирован")
@@ -162,8 +140,8 @@ def main():
                     <p>Для домашних сетей и малых офисов</p>
                     <hr>
                     <p>✅ Приложение успешно запущено!</p>
-                    <p>⚠️ GUI модуль временно недоступен</p>
-                    <p>Проверьте импорт модулей в src/gui/main_window.py</p>
+                    <p>⚠️ Основной GUI модуль недоступен</p>
+                    <p>Проверьте наличие файла src/gui/main_window.py</p>
                     """)
                     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                     layout.addWidget(label)
