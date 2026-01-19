@@ -1,0 +1,36 @@
+# Конфигурация Zero Trust для OpenWrt
+# Сгенерировано ZeroTrust Inspector {{ created_at }}
+# Политика: {{ policy_name }}
+
+# ===================== ЗОНЫ БЕЗОПАСНОСТИ =====================
+{% for zone in zones %}
+# Зона: {{ zone.name }}
+config zone '{{ zone.name|lower|replace(' ', '_') }}'
+    option name '{{ zone.name }}'
+    option description '{{ zone.description }}'
+    list network 'lan'
+    option input 'ACCEPT'
+    option output 'ACCEPT'
+    option forward 'REJECT'
+    option masq '1'
+    option mtu_fix '1'
+
+{% endfor %}
+
+# ===================== ПРАВИЛА МЕЖДУ ЗОНАМИ =====================
+{% for rule in rules %}
+# Правило: {{ rule.description }}
+config rule
+    option name '{{ rule.source_zone }}_to_{{ rule.dest_zone }}'
+    option src '{{ rule.source_zone|lower|replace(' ', '_') }}'
+    option dest '{{ rule.dest_zone|lower|replace(' ', '_') }}'
+    option proto '{{ rule.protocol|protocol_to_str }}'
+    {% if rule.port %}
+    option dest_port '{{ rule.port }}'
+    {% endif %}
+    option target '{{ rule.action|action_to_str|upper }}'
+    option enabled '1'
+
+{% endfor %}
+
+# ===================== КОНЕЦ КОНФИГУРАЦИИ =====================
