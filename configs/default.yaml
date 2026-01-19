@@ -1,75 +1,66 @@
 # Конфигурация ZeroTrust Inspector по умолчанию
 
-app:
+application:
   name: "ZeroTrust Inspector"
   version: "1.0.0"
   language: "ru"
-  theme: "light"
-  auto_update: true
+  theme: "dark"
+  auto_save: true
+  save_interval: 300  # секунды
 
 scanning:
-  default_network: "192.168.1.0/24"
-  scan_timeout: 30
-  max_concurrent_scans: 5
-  ports: "22,80,443,3389,8080,8443,9100,515,631"
-  quick_scan_ports: "22,80,443"
-  use_nmap_os_detection: true
+  network_timeout: 2
+  port_scan_timeout: 1
+  max_workers: 10
+  quick_scan_enabled: true
+  auto_classify: true
 
-zones:
+policy:
   default_zones:
-    - name: "Trusted"
+    - name: "Доверенная зона"
       type: "trusted"
-      description: "Доверенные устройства (компьютеры, телефоны)"
-      security_level: 5
-    - name: "IoT"
+      color: "#4CAF50"
+      description: "Компьютеры и телефоны пользователей"
+    
+    - name: "IoT устройства"
       type: "iot"
-      description: "Умные устройства (камеры, лампы, датчики)"
-      security_level: 2
-    - name: "Guests"
+      color: "#FF9800"
+      description: "Умные устройства, камеры, колонки"
+    
+    - name: "Гостевая сеть"
       type: "guest"
-      description: "Гостевая сеть"
-      security_level: 1
-    - name: "DMZ"
-      type: "dmz"
-      description: "Серверы с публичным доступом"
-      security_level: 3
-    - name: "Servers"
+      color: "#9C27B0"
+      description: "Гостевые устройства"
+    
+    - name: "Серверы"
       type: "server"
-      description: "Внутренние серверы"
-      security_level: 4
+      color: "#2196F3"
+      description: "Серверы и NAS"
 
-validation:
-  test_connectivity: true
-  test_isolation: true
-  test_performance: true
-  timeout: 5
-  retry_count: 2
+  default_rules:
+    - source: "Доверенная зона"
+      destination: "IoT устройства"
+      action: "deny"
+      description: "Изоляция IoT устройств"
+    
+    - source: "Гостевая сеть"
+      destination: "Доверенная зона"
+      action: "deny"
+      description: "Изоляция гостевой сети"
+    
+    - source: "IoT устройства"
+      destination: "Серверы"
+      action: "deny"
+      description: "Защита серверов"
 
 export:
-  default_platform: "mikrotik"
-  supported_platforms:
-    - "mikrotik"
-    - "ubiquiti"
-    - "iptables"
-    - "pfsense"
-  output_dir: "exports"
-  backup_before_export: true
+  default_platform: "openwrt"
+  backup_before_apply: true
+  validate_before_export: true
 
 gui:
   window_width: 1200
   window_height: 800
-  show_splash: true
-  animation_enabled: true
-  tooltips_enabled: true
-
-logging:
-  level: "INFO"
-  file: "logs/zerotrust.log"
-  max_size_mb: 10
-  backup_count: 5
-
-security:
-  require_admin_for_scan: true
-  validate_ssl_certificates: true
-  encrypt_config_files: false
-  auto_classify_devices: true
+  show_tooltips: true
+  animations_enabled: true
+  device_icons: true
