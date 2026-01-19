@@ -6,6 +6,7 @@ ZeroTrust Inspector - Главный файл приложения
 import sys
 import logging
 from pathlib import Path
+import traceback
 
 # Инициализируем логирование
 def setup_logging():
@@ -13,16 +14,32 @@ def setup_logging():
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_dir / 'zerotrust.log', encoding='utf-8'),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
+    logger = logging.getLogger("ZeroTrustInspector")
+    logger.setLevel(logging.DEBUG)
     
-    return logging.getLogger(__name__)
+    # Файловый обработчик
+    file_handler = logging.FileHandler(
+        log_dir / 'zerotrust.log', 
+        encoding='utf-8'
+    )
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Консольный обработчик
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    
+    # Форматтер
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
 
 logger = setup_logging()
 
@@ -30,19 +47,28 @@ def check_dependencies():
     """Проверка наличия необходимых зависимостей"""
     missing_deps = []
     
-    try:
-        import PyQt6
-    except ImportError:
-        missing_deps.append("PyQt6")
+    required_packages = [
+        ("PyQt6", "PyQt6"),
+        ("python-nmap", "nmap"),
+        ("scapy", "scapy"),
+        ("Jinja2", "jinja2"),
+        ("PyYAML", "yaml"),
+    ]
+    
+    logger.info("Проверка зависимостей...")
+    
+    for package_name, import_name in required_packages:
+        try:
+            __import__(import_name)
+            logger.info(f"✓ {package_name} установлен")
+        except ImportError:
+            logger.error(f"✗ {package_name} НЕ установлен")
+            missing_deps.append(package_name)
     
     if missing_deps:
-        logger.error("Отсутствуют необходимые зависимости:")
-        for dep in missing_deps:
-            logger.error(f"  - {dep}")
-        
         print("\n❌ ОШИБКА: Отсутствуют необходимые библиотеки")
         print("Установите их командой:")
-        print("pip install PyQt6")
+        print("pip install " + " ".join(missing_deps))
         return False
     
     return True
@@ -65,7 +91,10 @@ def show_splash_screen():
 
 def handle_uncaught_exceptions(exc_type, exc_value, exc_traceback):
     """Обработчик неперехваченных исключений"""
-    logger.critical("Неперехваченное исключение:", exc_info=(exc_type, exc_value, exc_traceback))
+    logger.critical(
+        "Неперехваченное исключение:", 
+        exc_info=(exc_type, exc_value, exc_traceback)
+    )
     
     try:
         from PyQt6.QtWidgets import QMessageBox, QApplication
@@ -83,8 +112,8 @@ def handle_uncaught_exceptions(exc_type, exc_value, exc_traceback):
         app = QApplication.instance()
         if app:
             QMessageBox.critical(None, "Критическая ошибка", error_msg)
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Ошибка при отображении диалога: {e}")
     
     sys.exit(1)
 
@@ -114,13 +143,15 @@ def main():
         from PyQt6.QtWidgets import QApplication
         from PyQt6.QtCore import QTimer
         
-        # Пробуем импортировать главное окно
+        # Импортируем главное окно
         try:
             from src.gui.main_window import MainWindow
             logger.info("GUI модуль успешно импортирован")
         except ImportError as e:
-            logger.warning(f"Не удалось импортировать MainWindow: {e}")
-            # Создаем простую версию
+            logger.error(f"Не удалось импортировать MainWindow: {e}")
+            logger.error(traceback.format_exc())
+            
+            # Создаем простую версию на случай ошибки
             from PyQt6.QtWidgets import QMainWindow, QLabel, QVBoxLayout, QWidget
             from PyQt6.QtCore import Qt
     
@@ -142,7 +173,8 @@ def main():
                     <p>✅ Приложение успешно запущено!</p>
                     <p>⚠️ Основной GUI модуль недоступен</p>
                     <p>Проверьте наличие файла src/gui/main_window.py</p>
-                    """)
+                    <p>Ошибка: %s</p>
+                    """ % str(e))
                     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                     layout.addWidget(label)
         
@@ -153,6 +185,18 @@ def main():
         app.setApplicationName("ZeroTrust Inspector")
         app.setApplicationVersion("1.0.0")
         app.setOrganizationName("ZeroTrust Project")
+        
+        # Загружаем стиль
+        try:
+            from PyQt6.QtCore import QFile, QTextStream
+            style_file = QFile("assets/styles/dark_theme.qss")
+            if style_file.open(QFile.OpenModeFlag.ReadOnly | QFile.OpenModeFlag.Text):
+                stream = QTextStream(style_file)
+                app.setStyleSheet(stream.readAll())
+                style_file.close()
+                logger.info("Тема успешно загружена")
+        except Exception as e:
+            logger.warning(f"Не удалось загрузить тему: {e}")
         
         # Создаем главное окно
         logger.info("Создание главного окна...")
