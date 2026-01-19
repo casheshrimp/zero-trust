@@ -1,5 +1,5 @@
 """
-Главное окно приложения
+Главное окно приложение - исправленная версия
 """
 
 from PyQt6.QtWidgets import (
@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, pyqtSlot
 from PyQt6.QtGui import QIcon, QFont
 
 # Используем абсолютные импорты
-from src.core.models import NetworkDevice, SecurityZone, NetworkPolicy, ZoneType, ActionType
+from src.core.models import NetworkDevice, SecurityZone, NetworkPolicy, ZoneType, DeviceType, ActionType
 
 class ScanThread(QThread):
     """Поток для выполнения сканирования"""
@@ -31,11 +31,41 @@ class ScanThread(QThread):
             
             # Имитация сканирования с прогрессом
             test_devices = [
-                NetworkDevice("192.168.1.1", "00:11:22:33:44:55", "router", vendor="TP-Link"),
-                NetworkDevice("192.168.1.10", "AA:BB:CC:DD:EE:FF", "home-pc", vendor="Dell"),
-                NetworkDevice("192.168.1.20", "11:22:33:44:55:66", "phone", vendor="Samsung"),
-                NetworkDevice("192.168.1.30", "FF:EE:DD:CC:BB:AA", "smart-tv", vendor="Sony"),
-                NetworkDevice("192.168.1.40", "22:33:44:55:66:77", "printer", vendor="HP"),
+                NetworkDevice(
+                    ip_address="192.168.1.1",
+                    mac_address="00:11:22:33:44:55",
+                    hostname="router",
+                    device_type=DeviceType.ROUTER,
+                    vendor="TP-Link"
+                ),
+                NetworkDevice(
+                    ip_address="192.168.1.10",
+                    mac_address="AA:BB:CC:DD:EE:FF",
+                    hostname="home-pc",
+                    device_type=DeviceType.COMPUTER,
+                    vendor="Dell"
+                ),
+                NetworkDevice(
+                    ip_address="192.168.1.20",
+                    mac_address="11:22:33:44:55:66",
+                    hostname="phone",
+                    device_type=DeviceType.PHONE,
+                    vendor="Samsung"
+                ),
+                NetworkDevice(
+                    ip_address="192.168.1.30",
+                    mac_address="FF:EE:DD:CC:BB:AA",
+                    hostname="smart-tv",
+                    device_type=DeviceType.IOT,
+                    vendor="Sony"
+                ),
+                NetworkDevice(
+                    ip_address="192.168.1.40",
+                    mac_address="22:33:44:55:66:77",
+                    hostname="printer",
+                    device_type=DeviceType.PRINTER,
+                    vendor="HP"
+                ),
             ]
             
             for i, device in enumerate(test_devices):
@@ -113,6 +143,7 @@ class MainWindow(QMainWindow):
         self.scan_thread = None
         self.validation_thread = None
         self.current_policy = None
+        self.devices = []  # Список устройств
         
         self.setup_ui()
         self.setup_connections()
@@ -398,6 +429,7 @@ class MainWindow(QMainWindow):
         
         # Очищаем старые результаты
         self.devices_list.clear()
+        self.devices = []
         
         # Показываем прогресс
         self.progress_bar.show()
@@ -431,12 +463,18 @@ class MainWindow(QMainWindow):
     @pyqtSlot(list)
     def on_scan_completed(self, devices):
         """Обработчик завершения сканирования"""
+        # Сохраняем устройства
+        self.devices = devices
+        
         # Обновляем список устройств
         for device in devices:
+            # Получаем тип устройства как строку
+            device_type_str = device.device_type.value if hasattr(device.device_type, 'value') else str(device.device_type)
+            
             item = QTreeWidgetItem([
                 device.hostname or "Неизвестно",
                 device.ip_address,
-                getattr(device, 'device_type', 'unknown')
+                device_type_str  # Используем строковое значение
             ])
             self.devices_list.addTopLevelItem(item)
         
